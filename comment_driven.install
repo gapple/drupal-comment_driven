@@ -1,0 +1,80 @@
+<?php
+// $Id$
+
+/**
+ * Implementation of hook_install().
+ */
+function comment_driven_install() {
+  drupal_install_schema('comment_driven');
+}
+
+/**
+ * Implementation of hook_uninstall().
+ */
+function comment_driven_uninstall() {
+  drupal_uninstall_schema('comment_driven');
+
+  db_query("DELETE FROM {variable} WHERE name LIKE 'comment_driven:%'");
+  cache_clear_all('variables', 'cache');
+}
+
+/**
+ * Implementation of hook_schema().
+ */
+function comment_driven_schema() {
+  $schema['comment_driven_log'] = array(
+    'description' => 'Traces driven property changes.',
+    'fields' => array(
+      'did' => array(
+        'type' => 'serial',
+        'not null' => TRUE,
+        'description' => 'Primary Key: Unique driven ID.',
+      ),
+      'cid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'description' => 'The {comments}.nid of the traced comment.',
+      ),
+      'old_vid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'description' => 'The {node_revisions}.vid of the driven node before being changed.',
+      ),
+      'new_vid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'description' => 'The {node_revisions}.vid of the driven node after being changed (will be equal to old_vid if revisions were disabled at the time).',
+      ),
+      'changes' => array(
+        'type' => 'text',
+        'not null' => TRUE,
+        'size' => 'big',
+        'description' => 'The changes made.',
+      ),
+      // properties might no longer exist suddenly
+      // render has to be made instantly and kept
+      'render_diff' => array(
+        'type' => 'text',
+        'not null' => TRUE,
+        'size' => 'big',
+        'description' => 'The rendered changes.',
+      ),
+      // won't be updated when editing the comment
+      // that's why not using {comments}.timestamp
+      'timestamp' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'description' => 'The time the change took place, as a Unix timestamp.',
+      ),
+    ),
+    'indexes' => array(
+      'cid'    => array('cid'),
+      'old_vid'    => array('old_vid'),
+      'new_vid' => array('new_vid'),
+      'timestamp' => array('timestamp'),
+    ),
+    'primary key' => array('did'),
+  );
+  
+  return $schema;
+}

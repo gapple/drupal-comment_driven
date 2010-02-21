@@ -1,0 +1,653 @@
+<?php
+// $Id$
+
+module_load_include('inc', 'comment_driven', 'comment_driven.tokens');
+
+/**
+ * Implementation of hook_enable().
+ */
+function comment_driven_enable() {
+  // weight above every other module
+  // since after altering comment_form
+  // no other module would be able to recognize its disguised elements
+  db_query("UPDATE {system} SET weight = 1000 WHERE name = 'comment_driven' AND type = 'module'");
+}
+
+/**
+ * Implementation of hook_perm().
+ */
+function comment_driven_perm() {
+  $perms = array('change any driven node through comments');  
+  
+  foreach (node_get_types() as $type) {
+    if ($type->module == 'node') {
+      $name = check_plain($type->type);
+      $perms[] = 'change any driven ' . $name . ' through comments';
+    }
+  }
+
+  return $perms;
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function comment_driven_form_node_type_form_alter(&$form, &$form_state) {
+  if (empty($form['#node_type']->type)) {
+    // on content type creation
+    $node_type = '';
+    $type_name = 'Node';
+  }
+  else {
+    $type = $form['#node_type'];
+    $node_type = $type->type;
+    $type_name = $type->name;
+  }
+  
+  $form['comment_driven'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Comment driven'),
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE,
+    //'#weight' => 1,
+  );
+  
+  $varname = 'comment_driven:enabled';
+  $form['comment_driven'][$varname] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Enable driven properties'),
+    '#description' => t('Whether this content type will be driven through comments.'),
+    '#default_value' => variable_get($varname . '_' . $node_type, 0),
+  );
+  
+  $varname = 'comment_driven:exclusivity';
+  $form['comment_driven'][$varname] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Hide driven properties when editing the node'),
+    '#description' => t('Removes driven properties from node edition forms.'),
+    '#default_value' => variable_get($varname . '_' . $node_type, 1),
+  );
+
+  $varname = 'comment_driven:empty_comment';
+  $form['comment_driven'][$varname] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Allow empty comments'),
+    '#description' => t('When selected empty comments will be allowed (only if driven properties are changed).'),
+    '#default_value' => variable_get($varname . '_' . $node_type, 1),
+  );
+
+  $varname = 'comment_driven:fieldset:collapsed';
+  $form['comment_driven'][$varname] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Collapsed driven properties'),
+    '#description' => t('Whether to present the fieldset containing the driven properties collapsed or expanded.'),
+    '#default_value' => variable_get($varname . '_' . $node_type, 1),
+  );
+
+  $varname = 'comment_driven:fieldset:title';
+  $form['comment_driven'][$varname] = array(
+    '#type' => 'textfield',
+    '#title' => t('Fieldset title'),
+    '#description' => t('The title displayed in the fieldset containing the driven properties.'),
+    '#default_value' => variable_get($varname . '_' . $node_type, t('Driven @type', array('@type' => $type_name))),
+  );
+
+  // Note: the index starts with the kind of property (e.g. node, taxo, cck)
+  // which will be required to know how to render the element (diff summary)
+  // cck in particular also demands to use is_empty callbacks
+  // to know if the field should be considered empty
+
+  if ($node_type) {
+    $available_props = module_invoke_all('driven_properties', $node_type);
+  }
+  elseif (module_exists('comment_driven_node')) {
+    // when the content type hasn't been created
+    // only node properties might be presented
+    // since they don't rely on $node_type
+    $available_props = comment_driven_node_driven_properties('');
+  }
+  else {
+    $available_props = array();
+  }
+  
+  // available properties already gathered
+  $varname = 'comment_driven:properties';
+  $form['comment_driven'][$varname] = array(
+    '#type' => 'checkboxes',
+    '#title' => 'Driven properties',
+    '#description' => t('Select which of the available properties will be driven through comments.'),
+    '#default_value' => variable_get($varname . '_' . $node_type, array()),
+    '#options' => $available_props,
+  );
+  
+  // there were no available properties found
+  if (empty($available_props)) {
+    $form['comment_driven'][$varname]['no_props'] = array(
+      '#type' => 'item',
+      '#value' => t('Currently there are no driven properties available.'),
+    );
+    if (empty($node_type)) {
+      // the content type is being created
+      // but comment_driven_node is not enabled
+      $msg = t('Driven properties will be available as soon as you create the content type and set up its properties (e.g. taxonomy, CCK fields, etc).');
+    }
+    else {
+      // there were no sub-modules exposing properties for this content type 
+      $msg = t('Driven properties for this content type hasn\'t been exposed by any module.');
+    }
+    $form['comment_driven'][$varname]['#description'] = $msg; 
+  }
+  // don't babysit, users must know they can't expect to configure what hasn't been enabled
+  // and they also know that enabling more module might bring more available options
+  //if (!empty($node_type)) {
+  //  $form['comment_driven'][$varname]['#description'] .= '<br/>' . t('You might need to enable other modules to get more driven properties exposed.');
+  //}
+
+  // lets hide advanced stuff from plain sight
+  // in passing by it will emphasize the end of driven properties above it
+  $form['comment_driven']['render'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Render'),
+    // emphatized enough already (and scary enough too)
+    // lets leave it visible, so users be aware of its existence
+    '#collapsible' => FALSE,
+    '#collapsed' => TRUE,
+  );
+  
+  // won't babysit ever after sitebuilders
+  // this is support enough until they actually know what they want
+  $varname = 'comment_driven:live_render';
+  $form['comment_driven']['render'][$varname] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Live render'),
+      '#description' => t('Renders driven properties on display time.')
+      . '<br/>' . t('Otherwise ancient cached data is used (snapshot made on comment creation time).')
+      // since this option lives in an exclusive fieldset, using <div> instead of <span> might be acceptable 
+      . '<br/><span class="warning">' . t('Might become an issue if properties being driven get deleted in the future without cleaning up the diff logs.') . '</span>'
+      . '<br/><span class="ok">' . t('This option is reversible at any time.') . '</span>'
+      . '<br/>' . t('If you are getting weird errors when displaying old comments try turning it off until you find support to figure it out.'),
+    '#default_value' => variable_get($varname . '_' . $node_type, 0),
+  );
+}
+
+/**
+ * Implementation of hook_node_type().
+ */
+function comment_driven_node_type($op, $info) {
+  $settings = array(
+    'comment_driven:enabled',
+    'comment_driven:exclusivity',
+    'comment_driven:empty_comment',
+    'comment_driven:fieldset:collapsed',
+    'comment_driven:fieldset:title',
+    'comment_driven:properties',
+    'comment_driven:live_render',
+  );
+  switch ($op) {
+    case 'delete':
+      foreach ($settings as $setting) {
+        variable_del($setting .'_'. $info->type);
+      }
+      break;
+  }
+}
+
+/**
+ * Implementation of hook_form_alter().
+ */
+function comment_driven_form_alter(&$form, &$form_state, $form_id) {
+  if ($form_id == 'comment_form') {
+    if (!empty($form['cid']['#value'])) {
+      // driven properties are not editable, just available on comment creation
+      return; // step out of the way
+    }
+    
+    $nid = $form['nid']['#value'];
+    $node = node_load($nid);
+    $node_type = $node->type;
+
+    if (!(user_access('change any driven ' . $node_type . ' through comments') || user_access('change any driven node through comments'))) {
+      // has no permission
+      return; // step out of the way
+    }
+    
+    $driven_props = variable_get('comment_driven:properties_' . $node_type, array());
+    
+    // modules might get disabled
+    // and its settings will remain until the content type be re-saved
+    $available_props = module_invoke_all('driven_properties', $node_type);
+    $driven_props = array_intersect($driven_props, array_keys($available_props));
+    
+    if (empty($driven_props)) {
+      // no driven properties
+      return; // step out of the way
+    }
+    
+    // node/node.pages.inc: required for node_form
+    // form_alter => cck/includes/content.node_form.inc
+    module_load_include('inc', 'node', 'node.pages');
+    // comment/comment.pages.inc: not needed
+    
+    // 'ned' prefix stands for 'node_edit'
+    $ned_form_id = $node_type .'_node_form';
+    $ned_form_state = array();
+    $ned_form = drupal_retrieve_form($ned_form_id, $ned_form_state, $node);
+    drupal_prepare_form($ned_form_id, $ned_form, $ned_form_state);
+    
+    // default access to false for every element
+    _comment_driven_access_in_depth($ned_form, FALSE);
+    
+    // enable access to every element in the path of a property
+    foreach ($driven_props as $property_path) {
+      $property_path = explode(':', $property_path);
+      $property_kind = array_shift($property_path); // remove property kind prefix
+      
+      $parent = &$ned_form;
+      foreach ($property_path as $prop) {
+        $parent[$prop]['#access'] = TRUE;
+        $parent = &$parent[$prop];
+      }
+      _comment_driven_access_in_depth($parent, TRUE);
+    }
+    
+    if (variable_get('comment_driven:empty_comment_' . $node_type, 1)) {
+      // allow empty comments (on validate will check if driven properties are changed)
+      $form['comment_filter']['comment']['#required'] = FALSE;
+    }
+    
+    // avoid name clashes
+    // (e.g. 'comment' is the body in comment_form and the comment_settings in node_form)
+    // (OTOH many of these properties doesn't mean anything to element, e.g. #validate)
+    $keys = array_diff(element_children($form), array('form_id', 'form_build_id', 'form_token'));
+    foreach ($keys as $key) {
+      $form['comment_driven'][$key] = $form[$key];
+      unset($form[$key]);
+    }
+    $form['comment_driven'] = _comment_driven_disguise($form['comment_driven']);
+    $keys = array('#validate', '#submit');
+    foreach ($keys as $key) {
+      $form['comment_driven']['#driven:' . $key] = $form[$key];
+      unset($form[$key]);
+    }
+    
+    // support comment preview
+    $op = isset($_POST['op']) ? $_POST['op'] : '';
+    if ($op == t('Preview')) {
+      // add ourself
+      $form['#after_build'][] = 'comment_driven_add_preview';
+      // remove comment.module 
+      $form['comment_driven']['#after_build'] = array_diff($form['#after_build'], array('comment_form_add_preview'));
+      unset($form['#after_build']); 
+    }
+    
+    // final modifications to $ned_form before copying it to the comment's form
+    unset($ned_form['buttons']); // avoid name clash between 'Preview' buttons at node/comment forms
+    
+    $form += $ned_form;
+    $form['#cache'] = FALSE; // node_form is cached, but comment_form shouldn't
+    
+    // @TODO: how to sort out the AHAH elements being cached and forcing the form to be cached as well?
+    // @TODO: disable every AHAH
+    // this removes #ahah from field_file_add_more
+    // but it is in vain,
+    // filefield_elements adds #input=TRUE to filefield_widget
+    // with #process'=>array('filefield_widget_process')
+    // which inserts $element['filefield_upload']['#ahah']
+    //_comment_driven_prop_in_depth($form, '#ahah', array());
+    
+    array_unshift($form['#validate'], 'comment_driven_validate');
+    // submit handler will be set on validate to avoid infinite recursion
+    // comment_driven_submit -> node_form_submit -> node_form_submit_build_node -> form_execute_handlers -> comment_driven_submit
+    //array_unshift($form['#submit'], 'comment_driven_submit');
+    $form['#after_build'][] = '_comment_driven_enhance_presentation';
+  }
+}
+
+function _comment_driven_access_in_depth(&$element, $allowed) {
+  _comment_driven_prop_in_depth($element, '#access', $allowed);
+}
+
+function _comment_driven_prop_in_depth(&$element, $key, $value) {
+  foreach (element_children($element) as $child) {
+    _comment_driven_prop_in_depth($element[$child], $key, $value);
+    $element[$child][$key] = $value;
+  }
+}
+
+function _comment_driven_disguise($element) {
+  foreach (element_children($element) as $key) {
+    $element['driven:' . $key] = _comment_driven_disguise($element[$key]);
+    unset($element[$key]);
+  }
+  return $element;
+}
+
+function _comment_driven_undisguise($element) {
+  foreach ($element as $key => $value) {
+    if (is_array($element[$key])) {
+      $element[$key] = _comment_driven_undisguise($element[$key]);
+    }
+    $pos = strpos($key, 'driven:');
+    if ($pos === 0 || $pos == 1) {
+      $comment_key = substr($key, $pos + strlen('driven:'));
+      $element[$comment_key] = $element[$key];
+      unset($element[$key]);
+    }
+  }
+  return $element;
+}
+
+// only first level 'driven:' prefixed values are desired
+function _comment_driven_extract_state_values($state_values) {
+  $values = array();
+  foreach (array_keys($state_values) as $key) {
+    if (strpos($key, 'driven:') === 0) { 
+      $values[$key] = $state_values[$key];
+    }
+  }
+  $values = _comment_driven_undisguise($values);
+  return $values;
+}
+
+function _comment_driven_enhance_presentation($form, &$form_state) {
+  // display comment preview abode driven node fieldset
+  if (!empty($form['comment_driven']['comment_preview'])) {
+    $form['comment_preview'] = $form['comment_driven']['comment_preview'];
+    unset($form['comment_driven']['comment_preview']);
+    $form['comment_preview']['#weight'] = -2;
+  }
+  
+  $node = $form['#node'];
+  $type = node_get_types('type', $node);
+  $node_type = $type->type;
+  $type_name = $type->name;
+
+  // group node elements into a fieldset
+  $driven_props = variable_get('comment_driven:properties_' . $node_type, array());
+  // if we reach this point $driven_props must be non-empty
+
+  // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
+  if (empty($driven_props)) comment_driven_assertion_failed('empty($driven_props)');
+  
+  foreach ($driven_props as $property_path) {
+    $property_path = explode(':', $property_path);
+    $property_kind = array_shift($property_path); // remove property kind prefix
+    
+    // property paths don't start with an asterisk
+    $root = array_shift($property_path);
+    // check that it wasn't moved already (avoid unset it)
+    // (e.g. moving several vocabularies under taxonomy)
+    if (!isset($form['driven_node'][$root])) {
+      $form['driven_node'][$root] = $form[$root];
+      unset($form[$root]);
+    }
+  }
+  $form['driven_node'] += array(
+    '#type' => 'fieldset',
+    '#title' => t('Driven @type', array('@type' => $type_name)),
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE,
+    // previewing comments begs for this to be above the comment
+    // due to filter fieldset and form suffix with node or parent comment preview
+    '#weight' => -1,
+  );
+  
+  return $form;
+}
+
+function comment_driven_add_preview($form, &$form_state) {
+  $comment_form = _comment_driven_undisguise($form);
+  $comment_form_state = $form_state; // copied
+  $comment_form_state['values'] = _comment_driven_extract_state_values($form_state['values']);
+  
+  $comment_form = comment_form_add_preview($comment_form, $comment_form_state);
+  // previews the comment
+  $form['comment_preview'] = $comment_form['comment_preview'];
+  // previews the node if has no parent comment
+  $form['#suffix'] = $comment_form['#suffix'];
+  // previews the parent comment (if any)
+  $form['comment_preview_below'] = $comment_form['comment_preview_below'];
+  return $form;
+}
+
+function comment_driven_validate($form, &$form_state) {
+  $node = $form['#node'];
+  $node_type = $node->type;
+
+  // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage
+  // after_build is too early to check if $form['#cache'] has been changed
+  // which is the very last step in form_builder (form.inc) 
+  if (!empty($form['#cache'])) comment_driven_assertion_failed('The node form is being cached (is an unsupported AHAH element being used?) Note that unlimited CCK fields (with "add more" button) are not supported yet.');
+  
+  $changes = comment_driven_form_changes($form, $form_state);
+  $form_state['comment_driven:changes'] = $changes; // save it for submit
+  
+  // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
+  if (!is_array($changes)) comment_driven_assertion_failed('!is_array($changes)');
+  
+  // report comment body as required if no changes
+  if (empty($changes) && variable_get('comment_driven:empty_comment_' . $node_type, 1)) {
+    $element = $form['comment_driven']['driven:comment_filter']['driven:comment'];
+    if (strlen(trim($element['#value'])) == 0) {
+      form_error($element, t('Comment field is required (or a driven property change otherwise).'));
+    }
+  }
+  
+  // @TODO: not sure about when to include these two
+  // they will be both loaded in this request anyway,
+  // and required at different times (form build/validate/submit)
+  // but not having loaded the required ones on proper time
+  // may lead to silent failures
+  module_load_include('inc', 'node', 'node.pages');
+  module_load_include('inc', 'comment', 'comment.pages');
+  
+  // set on validate to avoid infinite recursion
+  // comment_driven_submit -> node_form_submit -> node_form_submit_build_node -> form_execute_handlers -> comment_driven_submit
+  $form_state['submit_handlers'] = array('comment_driven_submit');
+  $comment_form = _comment_driven_undisguise($form['comment_driven']);
+  $comment_form_state = $form_state; // copied
+  $comment_form_state['values'] = _comment_driven_extract_state_values($form_state['values']);
+  
+  $validate_handlers = $comment_form['#validate'];
+  if (!empty($validate_handlers)) {
+    foreach ($validate_handlers as $validate_handler) {
+      $validate_handler($comment_form, $comment_form_state);
+    }
+  }
+}
+
+function comment_driven_submit($form, &$form_state) {
+  // @TODO: not sure about when to include these two
+  // they will be both loaded in this request anyway,
+  // and required at different times (form build/validate/submit)
+  // but not having loaded the required ones on proper time
+  // may lead to silent failures
+  module_load_include('inc', 'node', 'node.pages');
+  module_load_include('inc', 'comment', 'comment.pages');
+  
+  $node = $form['#node'];
+  
+  $comment_form = _comment_driven_undisguise($form['comment_driven']);
+  $comment_form_state = $form_state; // copied
+  $comment_form_state['values'] = _comment_driven_extract_state_values($form_state['values']);
+  
+  $submit_handlers = $comment_form['#submit'];
+  // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
+  if (!in_array('comment_form_submit', $submit_handlers)) comment_driven_assertion_failed('!in_array(\'comment_form_submit\', $submit_handlers)');
+  foreach ($submit_handlers as $submit_handler) {
+    if (function_exists($submit_handler)) {
+      $submit_handler($comment_form, $comment_form_state);
+      // honor submit handlers order
+      if ($submit_handler == 'comment_form_submit') {
+        // saved comment redirects to its respective fragment
+        $redirect = $comment_form_state['redirect'];
+        // @TODO: is there a better way to pick up the cid from comment_save?
+        // can't be db_last_insert_id('comments', 'cid')
+        // since comment_invoke_comment($edit, 'insert') already happened
+        // the approach taken is certain, since comment_form_submit
+        // picks up the $cid on success, and its last action is
+        // $form_state['redirect'] = array('node/'. $node->nid, $page, "comment-$cid");
+        $cid = substr($redirect[2], strlen('comment-'));
+        // comment_save receives $edit by value
+        // which is the $form_state['values'] comming from comment_form_submit
+        //$cid = $form_state['values']['cid'];        
+      }
+    }
+  }
+  
+  // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
+  if (!is_numeric($cid) && $cid > 0) comment_driven_assertion_failed('picked up an invalid $cid');
+
+  $changes = $form_state['comment_driven:changes'];
+  if (!empty($changes)) {
+    // properties might no longer exist suddenly
+    // render has to be made instantly and kept
+    $render_diff = comment_driven_render_diff($changes);
+    $old_vid = $node->vid;
+    $new_vid = ($node->revision ? 0 : $old_vid);
+    
+    $query = "INSERT INTO {comment_driven_log}(cid, old_vid, new_vid, changes, render_diff, timestamp) VALUES(%d, %d, %d, '%s', '%s', %d)";
+    db_query($query, $cid, $old_vid, $new_vid, serialize($changes), serialize($render_diff), time());
+    $did = db_last_insert_id('comment_driven_log', 'did');
+    
+    // only save if some value differs from its #default_value
+    // otherwise it is just a comment
+    node_form_submit($form, $form_state);
+    
+    if ($node->revision) {
+      $nid = $form_state['nid'];
+      $new_vid = db_result(db_query('SELECT vid FROM {node} WHERE nid = %d', $nid));
+      db_query('UPDATE {comment_driven_log} SET new_vid = %d WHERE did = %d', $new_vid, $did);
+    }
+  }
+
+  // restore proper redirect (which changed if node was saved)
+  $form_state['redirect'] = $redirect;
+}
+
+function comment_driven_form_changes($form, $form_state) {
+  $node = $form['#node'];
+  $node_type = $node->type;
+  module_load_include('inc', 'comment_driven', 'comment_driven.eq');
+  return _comment_driven_elem_changes($node_type, 'wrapper', $form['driven_node'], $form_state['values'], $form['driven_node']);  
+}
+
+// @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
+function comment_driven_assertion_failed($assertion) {
+  $msg = t('Assertion failed: "@assertion". Please <a href="http://drupal.org/project/issues/comment_driven">report this bug</a>.', array('@assertion' => $assertion));
+  drupal_set_message($msg, 'error', FALSE);
+  watchdog('comment_driven', $msg, NULL, WATCHDOG_ERROR);
+}
+
+function comment_driven_comment(&$comment, $op) {
+  switch ($op) {
+    case 'view':
+      // make the styles available even when there is no diff summary
+      // that way themers may rely on it on every page displaying a comment 
+      drupal_add_css(drupal_get_path('module', 'comment_driven') . '/comment_driven.css');
+      if ($log = comment_driven_load_log($comment->cid)) {
+        $comment->driven_log = $log; 
+      }
+      break;
+  }
+}
+
+function comment_driven_load_log($cid) {
+  $result = db_query('SELECT * FROM {comment_driven_log} WHERE cid = %d', $cid);
+  if ($log = db_fetch_object($result)) {
+    $log->changes = unserialize($log->changes);
+    $log->render_diff = unserialize($log->render_diff);
+  }
+
+  // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
+  if (db_fetch_object($result) !== FALSE) comment_driven_assertion_failed('non-unique {comment_driven_log}.cid: ' . $cid);
+
+  return $log; // FALSE if not found
+}
+
+function comment_driven_render_diff($changes) {
+  $keyed_rows = array();
+  foreach ($changes as $driven_prop => $change) {
+    $property_path = explode(':', $driven_prop);
+    $property_kind = array_shift($property_path); // remove property kind prefix
+    
+    $label = $change['label'];
+    $old = $change['old'];
+    $new = $change['new'];
+    $meta = $change['meta'];
+    
+    $function = 'comment_drivent_' . $property_kind . '_render_diff';
+    list($old, $new) = $function($old, $new, $meta);
+    if (is_array($old)) {
+      $old = implode(', ', $old);
+      $new = implode(', ', $new);
+    }
+    $keyed_rows[] = array('label' => $label, 'old' => $old, 'new' => $new);
+  }
+  return $keyed_rows;
+}
+
+function comment_driven_preprocess_comment(&$vars) {
+  $comment = $vars['comment'];
+  if (!isset($comment->driven_log)) return;
+  
+  $node_type = node_get_types('type', node_load($comment->nid))->type;
+  $live_render = variable_get('comment_driven:live_render_' . $node_type, 0);
+  
+  $log = $comment->driven_log;
+  $render_diff = $live_render ? comment_driven_render_diff($log->changes) : $log->render_diff;
+  foreach ($render_diff as $keyed_row) {
+    $rows[] = array($keyed_row['label'] . ':&nbsp', $keyed_row['old'], '&raquo;', $keyed_row['new']);
+  }
+  $diff_summary = theme('table', array(), $rows, array('class' => 'comment_driven'));
+  
+  //$vars['comment_body'] = $vars['content']; // $vars['comment']->comment
+  $vars['content'] = $diff_summary . $vars['content'];
+
+  if ($log->old_vid != $log->new_vid) {
+    // to be used like: print l(t('view revision before changes'), $driven_revision_before . '/view')
+    $vars['driven_revision_before'] = "node/$comment->nid/revisions/$log->old_vid"; 
+    $vars['driven_revision_after'] = "node/$comment->nid/revisions/$log->new_vid";
+  }
+}
+
+function comment_driven_symmetric_diff($arr1, $arr2) {
+  module_load_include('inc', 'comment_driven', 'comment_driven.eq');
+  return _comment_driven_symmetric_diff($arr1, $arr2);
+}
+
+/**
+ * Implementation of hook_theme()
+ */
+function comment_driven_theme() {
+  return array(
+    'comment_driven_outgoing_diff' => array(
+      'arguments' => array('content' => '', 'classes' => array()),
+    ),
+    'comment_driven_incoming_diff' => array(
+      'arguments' => array('content' => '', 'classes' => array()),
+    ),
+    'comment_driven_simple_table' => array(
+      'arguments' => array('rows' => array()),
+      'file' => 'comment_driven.theme_tokens.inc',
+    ),
+    'comment_driven_simple_ulist' => array(
+      'arguments' => array('rows' => array()),
+      'file' => 'comment_driven.theme_tokens.inc',
+    ),
+  );
+}
+
+function theme_comment_driven_outgoing_diff($content, $classes = array()) {
+  $wrapper = 'diff outgoing-diff';
+  if (empty($content)) $classes[] = 'empty'; 
+  $classes = implode(' ', $classes);
+  return '<span class="' . $wrapper . '"><span class="' . $classes . '"><span class="mark">-</span>' . $content . '</span></span>';
+}
+
+function theme_comment_driven_incoming_diff($content, $classes = array()) {
+  $wrapper = 'diff incoming-diff';
+  if (empty($content)) $classes[] = 'empty'; 
+  $classes = implode(' ', $classes);
+  return '<span class="' . $wrapper . '"><span class="' . $classes . '"><span class="mark">+</span>' . $content . '</span></span>';
+}

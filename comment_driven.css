@@ -1,0 +1,40 @@
+/* $Id$ */
+
+table.comment_driven {
+  margin: 0;
+  width: auto;
+}
+
+table.comment_driven tr td, table.comment_driven tr th {
+  padding: 0 .3em;
+}
+
+.diff.outgoing-diff {
+  /* text-decoration: line-through; */
+}
+
+.diff .mark {
+  padding-right: 2px;
+  font-weight: bold;
+}
+
+.diff.outgoing-diff .mark {
+  color: red;
+}
+
+.diff.incoming-diff .mark {
+  color: green;
+}
+
+.diff .number_integer .mark,
+.diff .number_decimal .mark,
+.diff .number_float .mark {
+  display: none;
+}
+
+.diff.outgoing-diff .number_integer,
+.diff.outgoing-diff .number_decimal,
+.diff.outgoing-diff .number_float {
+  text-decoration: line-through;
+}
+

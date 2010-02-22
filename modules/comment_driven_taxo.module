@@ -1,0 +1,184 @@
+<?php
+// $Id$
+
+/**
+ * Implements hook_driven_properties().
+ */
+function comment_driven_taxo_driven_properties($node_type) {
+  $available_props = array();
+  $vocabularies = taxonomy_get_vocabularies($node_type);
+  foreach ($vocabularies as $voc) {
+    $available_props['taxo:taxonomy:' . ($voc->tags ? 'tags:' : '') . $voc->vid] = t('Taxonomy') . ' &raquo; ' . $voc->name; 
+  }
+  return $available_props;
+}
+
+/**
+ * Implements comment_driven_[element_kind]_bypass_property().
+ */
+function comment_driven_taxo_bypass_property($node_type, $element_path, $element) {
+  // beneath taxonomy:vid or taxonomy:tags:vid nothing is handled by core
+  // until we meet special cases
+  // (e.g. taxiselect uses extra checkbox & hidden, but the should be ignored as well)
+  return TRUE;
+}
+
+/**
+ * Implements comment_driven_[element_kind]_equal().
+ */
+function comment_driven_taxo_equal($element, &$value, &$meta = array()) {
+  // $value will be normized by if needed (per case basis)
+  // to match #default_value format instead of $form_state['values']
+  
+  // pack info for render time
+  $vid = array_pop($element['#parents']);
+  $meta = compact('vid');
+  
+  $default = $element['#default_value'];
+  switch ($element['#type']) {
+    // support single/multiple select
+    case 'select':
+      // non-associative array
+      $default = array_values($default);
+      // $element['#multiple'] => associative array coming from drupal_map_assoc
+      // otherwise plain number (tid)
+      $value = $element['#multiple'] ? array_values($value) : array($value);
+      return _comment_driven_equal_array_values($default, $value);
+
+    // support tags
+    case 'textfield':
+      // taxonomy_single_tag delegates to core, therefore no special case for it
+      // besides, the imploded version will be recorded, therefore a textfield is always a string
+      // therefore, no conflict with: active_tags, taxiselect, etc
+      
+      // using === to avoid comparing zero vs string which gives TRUE
+      return ($default === $value);
+    
+    // @per-module-discrimination: support taxiselect_element
+    case 'taxiselect_element':
+      // non-associative array
+      $default = array_values($default);
+      // according to taxiselect_element_expand
+      // $element['#multiple']: 0 == Unlimited, 1+ == Max #num
+      // either way it is an associative array coming from drupal_map_assoc
+      $value = array_values($value);
+      return _comment_driven_equal_array_values($default, $value);
+
+    // @per-module-discrimination: support betterselect
+    // which tweaks taxonomy:vid=>select into taxonomy:vid:tid=>checkbox
+    case 'checkboxes':
+      // @TODO: the bug picking up the #default_value
+      // comes from a betterselect bug: #705984: broken default_value into betterselect_process
+
+      // strip unchecked checkboxes
+      $default = array_filter($default);
+      // strip unchecked checkboxes
+      $value = array_filter($value);
+      // compare their keys
+      $default = array_keys($default);
+      $value = array_keys($value); // @TODO: sure? $value comes by ref (lets wait until betterselect clear its bug)
+      // using count, since empty won't receive direct result from array_diff
+      return _comment_driven_equal_array_values($default, $value);
+    
+    // the default case should not happen for taxonomy
+    // but if something escapes the above cases
+    default:
+      // do the best possible (not considering arrays, since might require recursive comparison)
+      return _comment_driven_equal_non_array($element, $value); 
+  }
+}
+
+/**
+ * Implements comment_driven_[element_kind]_label().
+ */
+//function comment_driven_taxo_label($element, $parents_titles) {
+//  return comment_driven_first_title($element, $parents_titles);
+//}
+
+/**
+ * Implements comment_driven_[element_kind]_render_diff().
+ */
+function comment_drivent_taxo_render_diff($old, $new, $meta) {
+  // unpack info: $vid
+  extract($meta);
+  
+  $old_rendered = array();
+  $new_rendered = array();
+  if (is_string($old)) {
+    // @per-module-discrimination: support taxonomy_single_tag
+    $vids_single_tag = variable_get('taxonomy_single_tag:vids', array());
+    if (in_array($vid, $vids_single_tag)) {
+      $old_rendered = '';
+      $new_rendered = '';
+      if (!empty($old)) {
+        $candidates = taxonomy_get_term_by_name($old);
+        foreach ($candidates as $term) {
+          if ($term->vid == $vid) {
+            $old_rendered = l($term->name, taxonomy_term_path($term));
+          }
+        }
+      
+        // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
+        if ($term->name !== $old) comment_driven_assertion_failed('tag not found: ' . $term->name);
+      }
+      if (!empty($new)) {
+        $candidates = taxonomy_get_term_by_name($new);
+        foreach ($candidates as $term) {
+          if ($term->vid == $vid) {
+            $new_rendered = l($term->name, taxonomy_term_path($term));
+          }
+        }
+      
+        // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
+        if ($term->name !== $new) comment_driven_assertion_failed('tag not found: ' . $term->name);
+      }
+      return array($old_rendered, $new_rendered);
+    }
+
+    $old_terms = drupal_explode_tags($old);
+    $new_terms = drupal_explode_tags($new);
+    list($old_terms, $new_terms) = comment_driven_symmetric_diff($old_terms, $new_terms);
+    
+    foreach ($old_terms as $term_name) {
+      $candidates = taxonomy_get_term_by_name($term_name);
+      foreach ($candidates as $term) {
+        if ($term->vid == $vid) {
+          $old_rendered[] = theme('comment_driven_outgoing_diff', l($term->name, taxonomy_term_path($term)), array('term', 'vid-' . $vid, 'tag'));
+          break;
+        }
+      }
+      
+      // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
+      if ($term->name !== $term_name) comment_driven_assertion_failed('tag not found: ' . $term->name);
+    }
+    foreach ($new_terms as $term_name) {
+      $candidates = taxonomy_get_term_by_name($term_name);
+      foreach ($candidates as $term) {
+        if ($term->vid == $vid) {
+          $new_rendered[] = theme('comment_driven_incoming_diff', l($term->name, taxonomy_term_path($term)), array('term', 'vid-' . $vid, 'tag'));
+          break;
+        }
+      }
+      
+      // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
+      if ($term->name !== $term_name) comment_driven_assertion_failed('tag not found: ' . $term->name);
+    }
+  }
+  else {
+    foreach ($old as $tid) {
+      $term = taxonomy_get_term($tid);
+      $old_rendered[] = theme('comment_driven_outgoing_diff', l($term->name, taxonomy_term_path($term)), array('term', 'vid-' . $vid));
+      
+      // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
+      if ($term === FALSE) comment_driven_assertion_failed('term not found for tid: ' . $tid);
+    }
+    foreach ($new as $tid) {
+      $term = taxonomy_get_term($tid);
+      $new_rendered[] = theme('comment_driven_incoming_diff', l($term->name, taxonomy_term_path($term)), array('term', 'vid-' . $vid));
+      
+      // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
+      if ($term === FALSE) comment_driven_assertion_failed('term not found for tid: ' . $tid);
+    }
+  }
+  return array($old_rendered, $new_rendered);
+}

@@ -77,10 +77,7 @@ function comment_driven_cck_driven_properties($node_type) {
  * Implements hook_diff_values().
  */
 function comment_driven_cck_diff_values($element, $form_values, $meta) {
-  // $value will be normized by if needed (per case basis)
-  // to match #default_value format instead of $form_state['values']
-  
-  extract($meta); // $node_type, $field_name
+  extract($meta); // $realm, $property_path, $node_type, $field_name
 
   $field = comment_driven_cck_get_field($field_name, $node_type);
   if (!$field) {
@@ -89,23 +86,29 @@ function comment_driven_cck_diff_values($element, $form_values, $meta) {
     return FALSE; // nothing to declare (i.e. return no diff_values)
   }
 
-  // if values are not at this level go deep through
+  // if values are not at this level pass through it
   if (!isset($element['#default_value'])) {
     if (!count(element_children($element))) {
       // bypass (it should be add_more or something else)
       return FALSE;
     }
     
+    // @TODO: FIXME: don't miss extra items added with add_more button
+    // remember that $form_values might have more deltas than $element
+    // fixes attempts brought other bugs:
+    // - re-preview loosing added fields after some idle time
+    // - uncontroled _error_element ruining symmetric diff
+    // - filling with inplace built empty ala content_set_empty without presave/etc
     foreach (element_children($element) as $key) {
       $diff_values = comment_driven_cck_diff_values($element[$key], $form_values, $meta);
       if (!$diff_values) continue;
       
       list($old, $new) = $diff_values;
-      // @TODO: revisit
-      // index with $key? (e.g. uid, nid, numeric deltas, etc)
-      // (reseted indexes wouldn't harm, but wouldn't be accurate either)
-      $olds[] = $old;
-      $news[] = $new;
+      // on diff_render symmetric_diff will drop the keys
+      // therefore reseted indexes wouldn't harm here
+      // but wouldn't be accurate either (e.g. for debugging)
+      $olds[$key] = $old;
+      $news[$key] = $new;
     }
     
     if (empty($olds) && empty($news)) return FALSE;
@@ -194,6 +197,12 @@ function comment_driven_cck_diff_values($element, $form_values, $meta) {
     // '_weight' should come cleared from 'presave' (_content_sort_items)
     // but it won't harm to cover it here as well (just in case)
     unset($value['_weight'], $value['_error_element']);
+    
+    // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
+    if (isset($default['#_error_element'])) comment_driven_assertion_failed('isset($default[\'#_error_element\']) path: ' . implode(':', $element['#array_parents']));
+    // clearing $default shouldn't be needed, but it seems it does
+    // when AHAH is involved the form might come back with _error_element
+    unset($default['_weight'], $default['_error_element']);
   }
   
   // from this point $value is no longer passed by ref
@@ -205,7 +214,7 @@ function comment_driven_cck_diff_values($element, $form_values, $meta) {
  * Implements hook_diff_render().
  */
 function comment_driven_cck_diff_render($old, $new, $meta) {
-  extract($meta); // $node_type, $field_name
+  extract($meta); // $realm, $property_path, $node_type, $field_name
 
   $field = comment_driven_cck_get_field($field_name, $node_type);
   if (!$field) {

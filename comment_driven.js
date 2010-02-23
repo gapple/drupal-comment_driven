@@ -11,8 +11,16 @@ Drupal.comment_driven.node_wrap = function() {
   // but we wan't to reorder them both within the form
   // therefore, we'll bring out the the two major pieces (comment_form and empty fieldset)
   // to be able to select everything else to go into id=driven_node_container
-  $('#comment_driven').prependTo('#comment-form');
-  $('#driven_node_container').prependTo('#comment-form');
+  //
+  // note that the second one added will be preppended on top
+  if (Drupal.settings.comment_driven.node_form_bellow) {
+    $('#driven_node_container').prependTo('#comment-form');
+    $('#comment_driven').prependTo('#comment-form');
+  }
+  else {
+    $('#comment_driven').prependTo('#comment-form');
+    $('#driven_node_container').prependTo('#comment-form');
+  }
   
   // bring every node_form element into the fieldset
   // don't rely on class=node-form being set by a theme function

@@ -33,10 +33,22 @@ function _comment_driven_elem_changes($driven_props, $element, $form_values, $as
   // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
   if ($element['#access'] === FALSE) comment_driven_assertion_failed('#access===FALSE');
   
+  // note that 'form' will be always passed through
+  // since it is only expected as the root element in a form
+  // (do XHTML specifications allow for nested forms?)
+  // nevermind, Drupal doesn't support nested forms
+  // see static $complete_form on top of form_builder
+  
   // the first time the $form doesn't have #array_parents
   // but that shouldn't be the criteria to discriminate,
   // some other elements might come up without #array_parents (e.g. radio)
   if ($element['#type'] != 'form') {
+    // the form_build_id is not he only hidden with #value and no #default_value
+    // hierarchical_select has its own hs_form_build_id
+    if (empty($element['#array_parents']) && $element['#type'] == 'hidden') {
+      return array(); // step out
+    }
+    
     // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
     if (empty($element['#array_parents'])) comment_driven_assertion_failed('empty #array_parents for #type: ' . $element['#type']);
       
@@ -88,7 +100,7 @@ function _comment_driven_elem_changes($driven_props, $element, $form_values, $as
     }
   }
   else {
-    // if it is not a driven property go deep through
+    // if it is not a driven property, pass through it
     foreach (element_children($element) as $key) {
       // bypass inaccesible elements (e.g. some form values, hiddens)
       // also ingore diguised comment form elements
@@ -166,11 +178,18 @@ function _comment_driven_equal_non_array($default, &$value) {
   return ($default === $value || (empty($default) && empty($value)));
 }
 
-// note that symmetric_diff will consider keys
-// in many cases the desired result would be
+// note that symmetric_diff will consider discard keys for first level
 // first pick up values and then deeply compare them
+// and finally will return arrays with reseted keys
 // (avoid direct invokation, use comment_driven_symmetric_diff instead)
 function _comment_driven_symmetric_diff($arr1, $arr2) {
+  // we are going to iterate n^2
+  // but that doesn't make clear at first sight
+  // that keys are being discarded
+  // so, lets make it clear enough
+  $arr1 = array_values($arr1);
+  $arr2 = array_values($arr2);
+  
   $outgoing = $arr1;
   $incoming = $arr2;
   

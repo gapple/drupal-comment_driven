@@ -41,7 +41,7 @@ function comment_driven_taxo_driven_properties($node_type) {
  * Implements hook_diff_values().
  */
 function comment_driven_taxo_diff_values($element, $form_values, $meta) {
-  extract($meta); // $vid
+  extract($meta); // $realm, $property_path, $vid
 
   $voc = taxonomy_vocabulary_load($vid);
   if (!$voc) {
@@ -51,6 +51,10 @@ function comment_driven_taxo_diff_values($element, $form_values, $meta) {
     return FALSE; // nothing to declare (i.e. return no diff_values)
   }
   
+  // beneath taxonomy:vid or taxonomy:tags:vid nothing is handled by core
+  // until we meet special cases
+  // (e.g. taxiselect uses extra checkbox & hidden, but the should be ignored as well)
+
   $default = $element['#default_value'];
   // $value will be normized if needed (per case basis)
   // to match #default_value format instead of $form_state['values']
@@ -64,8 +68,14 @@ function comment_driven_taxo_diff_values($element, $form_values, $meta) {
       $default = array_values($default);
       // $element['#multiple'] => associative array coming from drupal_map_assoc
       // otherwise plain number (tid)
-      $value = $element['#multiple'] ? array_values($value) : array($value);
-      if (comment_driven_equal_array_values($default, $value)) return FALSE;
+      if ($element['#multiple']) {
+        $value = array_values($value);
+        if (comment_driven_equal_array_values($default, $value)) return FALSE;
+      }
+      else {
+        $default = array_shift($default);
+        if (_comment_driven_equal_non_array($default, $value)) return FALSE;
+      }
       break;
     
     // support tags
@@ -107,6 +117,33 @@ function comment_driven_taxo_diff_values($element, $form_values, $meta) {
       if (comment_driven_equal_array_values($default, $value)) return FALSE;
       break;
       
+    // @per-module-discrimination: support hierarchical_select
+    // (partial, can't figure it out all at once)
+    case 'hierarchical_select':
+      // according to hierarchical_select_process:
+      // "If #value is not an array, then form_set_value(), which is called by form_builder() will fail"
+      // and with this it refers to #default_value as well, since they are handled the same way
+      //
+      // therefore it will be always a non-associative array in #default_value
+
+      // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
+      if ($voc->multiple != $element['#config']['save_lineage']) comment_driven_assertion_failed('$voc->multiple != HS save_lineage (vid: ' . $voc->vid . ')');
+      
+      // lineage <=> multiple (guaranteed by HS on vocabulary submit)
+      if ($voc->multiple) {
+        // if HS is gonna save the lineage we can't ignore ascendants
+        if (comment_driven_equal_array_values($default, $value)) return FALSE;
+      }
+      else {
+        // Note that for we normalize #default_value as well
+        // because HS always uses an array (read above)
+        $default = $default[0];
+        // read above to know why checking on multiple when HS doesn't care about it
+        $value = $voc->multiple ? $value[0] : $value;
+        if (_comment_driven_equal_non_array($default, $value)) return FALSE;
+      }
+      break;
+      
     default:
       // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
       comment_driven_assertion_failed('unhandled case for #type: ' . $element['#type']);
@@ -122,7 +159,7 @@ function comment_driven_taxo_diff_values($element, $form_values, $meta) {
  * Implements hook_diff_render().
  */
 function comment_driven_taxo_diff_render($old, $new, $meta) {
-  extract($meta); // $vid
+  extract($meta); // $realm, $property_path, $vid
     
   $voc = taxonomy_vocabulary_load($vid);
   if (!$voc) {
@@ -227,8 +264,39 @@ function comment_driven_taxo_diff_render($old, $new, $meta) {
   }
   else {
     // non-tags
-    list($old, $new) = comment_driven_symmetric_diff($old, $new);
     
+    // @per-module-discrimination: support hierarchical_select
+    // check whether we are receiving arrays or plain tids
+    // lineage <=> multiple (guaranteed by HS on vocabulary submit)
+    // lets wrap it to use the same code and unwrap it afterwards
+    //
+    // a pitfall for HS and non-tags is changing the multiplicity of the vocabulary
+    // after some changes were recorded in logs
+    // then, if the vocabulary was multiple and suddenly pass to be single
+    // diff_render will display them as comma separated list
+    // without themed +/- prefixes
+    // that's why we don't check wether the vocabulary is multiple
+    // instead whether we are receiving arrays or tids
+    //
+    // remember that having live_render disabled will always display
+    // the proper changes according to the time they were made
+    // but won't reflect renamed terms or vocabularies
+    //
+    // we won't babysit, choice have to be made regarding live_render or not
+    // this is a little babysit for HS (but have nothing similar for tags above)
+    // (also if the multiplicity change happens without HS error will come up)
+    $wrapped = !is_array($old); 
+    
+    if ($wrapped) {
+      // we got plain tids, but lets use the same code bellow
+      // temporary convert them to arrays
+      $old = array($old);
+      $new = array($new);
+    }
+    else {
+      list($old, $new) = comment_driven_symmetric_diff($old, $new);
+    }
+      
     foreach ($old as $tid) {
       if ($term = taxonomy_get_term($tid)) {
         $rendered_term = theme('comment_driven_term', $term);
@@ -253,6 +321,15 @@ function comment_driven_taxo_diff_render($old, $new, $meta) {
       else {
         comment_driven_taxo_warn_term_not_found($tid, $vid);
       }
+    }
+    
+    if ($wrapped) {
+      // unwrap the tids from the temporary arrays
+      // avoid rendering as multiple values
+      // actually it won't matter an implode
+      // of arrays with just one element, but lets be faithfuls
+      $outgoing = array_shift($outgoing);
+      $incoming = array_shift($incoming);
     }
   }
   return array($outgoing, $incoming);

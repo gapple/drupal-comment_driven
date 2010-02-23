@@ -47,3 +47,38 @@ table.comment_driven tr td *, table.comment_driven tr th * {
   text-decoration: line-through;
 }
 
+table.comment_driven .boolean,
+table.comment_driven .comment-settings {
+  background-position: 5px 50%;
+  background-repeat: no-repeat;
+  padding-bottom: 6px;
+  padding-top: 6px;
+  padding-left: 30px;
+  padding-right: 8px;
+}
+
+table.comment_driven .boolean.true {
+  color: green;
+  background-image: url(img/ok.png);
+}
+
+table.comment_driven .boolean.false {
+  color: red;
+  background-image: url(img/error.png);
+}
+
+table.comment_driven .comment-settings.disabled {
+  color: gray;
+  background-image: url(img/error.png);
+}
+
+table.comment_driven .comment-settings.read-only {
+  color: #EF9E00;
+  background-image: url(img/warn.png);
+}
+
+table.comment_driven .comment-settings.read-write {
+  color: green;
+  background-image: url(img/ok.png);
+}
+

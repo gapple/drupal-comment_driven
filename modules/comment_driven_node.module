@@ -16,16 +16,13 @@ function comment_driven_node_driven_properties($node_type) {
     ),
   );
   
+  // @TODO: review
+  $label = node_get_types('type', $node_type)->body_label;
   // body_field:body, body_field:format,
   // body_field:teaser_include, body_field:teaser_js
-  $formatted_text = array(
-    'text' => 'body',
-    'format' => 'format',
-  );
   $available_props['body_field'] = array(
     'realm' => 'node',
-    'meta' => compact('formatted_text'),
-    'exclude' => array('teaser_include', 'teaser_js'), // @TODO: revisit
+    'label' => $label,
     'type_settings' => array(
       '#title' => $prefix . t('Body'),
     ),
@@ -62,16 +59,18 @@ function comment_driven_node_driven_properties($node_type) {
     ),
   );
   
+  $theme = 'comment_driven_node_comment_settings';
   $available_props['comment_settings'] = array(
     'realm' => 'node',
     'label' => t('Comments'), // default would be: 'Comment settings'
+    'meta' => compact('theme'),
     'type_settings' => array(
       '#title' => $prefix . t('Comment settings'),
     ),
   );
   
   $theme = 'comment_driven_username';
-  $available_props['authored:name'] = array(
+  $available_props['author:name'] = array(
     'realm' => 'node',
     'meta' => compact('theme'),
     'type_settings' => array(
@@ -79,7 +78,7 @@ function comment_driven_node_driven_properties($node_type) {
     ),
   );
   
-  $available_props['authored:date'] = array(
+  $available_props['author:date'] = array(
     'realm' => 'node',
     'type_settings' => array(
       '#title' => $prefix . t('Authored on'),
@@ -124,40 +123,141 @@ function comment_driven_node_driven_properties($node_type) {
 }
 
 /**
- * Implements hook_bypass_property().
+ * Implements hook_diff_values().
  */
-function comment_driven_node_bypass_property($node_type, $element_path, $element) {
-  // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
-  if ($element['#type'] == 'textarea' && $element_path != 'body_field:body') comment_driven_assertion_failed('unknown #type=textarea at: ' . $element_path);
-
-  // there is body_field with body, format, js_teaser, js_include beneath
-  return ($element['#type'] != 'textarea');
-}
-
-/**
- * Implements hook_label().
- */
-//function comment_driven_node_label($element, $parents_titles) {
-//  return comment_driven_first_title($element, $parents_titles);
-//}
-
-/**
- * Implements hook_equal_values().
- */
-function comment_driven_node_equal_values($element, &$value, &$meta = array()) {
+function comment_driven_node_diff_values($element, $form_values, $meta) {
+  extract($meta); // $realm, $property_path, $theme
+  
+  // if values are not at this level pass through it
+  // IMPORTANT: differs from CCK, where #default_values are initialized to empty string in the worse case
+  // for node properties we must consider existing keys with NULL values
+  // to support textfields (e.g. path) 
+  if (!in_array('#default_value', array_keys($element))) {
+    if ($element['#parents'][0] == 'body_field') {
+      return _comment_driven_node_diff_body($element, $form_values, $meta);
+    }
+    
+    if (!count(element_children($element))) {
+      // bypass (it should be a wrapper or something else)
+      return FALSE;
+    }
+  
+    foreach (element_children($element) as $key) {
+      $diff_values = comment_driven_node_diff_values($element[$key], $form_values, $meta);
+      if (!$diff_values) continue;
+      
+      list($old, $new) = $diff_values;
+      // on diff_render symmetric_diff will drop the keys
+      // therefore reseted indexes wouldn't harm here
+      // but wouldn't be accurate either (e.g. for debugging)
+      $olds[$key] = $old;
+      $news[$key] = $new;
+    }
+    
+    if (empty($olds) && empty($news)) return FALSE;
+    return array($olds, $news);
+  }
+  
+  $default = $element['#default_value'];
+  // $value will be normized if needed (per case basis)
+  // to match #default_value format instead of $form_state['values']
+  $value = comment_driven_form_get_value($element['#parents'], $form_values);
+  
   // @TODO: consider body_field:format as well as CCK text does
-  return _comment_driven_equal_non_array($element, $value); 
+  if (_comment_driven_equal_non_array($default, $value)) return FALSE;
+  return array($default, $value); 
 }
 
 /**
  * Implements hook_diff_render().
  */
-function comment_drivent_node_render_diff($old, $new, $meta) {
-  // @TODO: some $meta might come handy
-  // even for body_field:format, for publishing checkboxes, comment settings radios, etc
-  // @TODO FIXME: sanitize body_field according ot its input format
-  // @TODO: will need to trim the body_field somehow
-  if (is_string($old)) $old = check_plain($old);
-  if (is_string($new)) $new = check_plain($new);
-  return array($old, $new); // @TODO FIXME: temporal (should discriminate the type of value, i.e. checkbox, radio, textfield, textarea!, etc)
+function comment_driven_node_diff_render($old, $new, $meta) {
+  extract($meta); // $realm, $property_path, $theme
+  
+  if (is_array($old)) {
+    // is important to check is_array($old)
+    // because if it is string the key will evaluate to zero
+    // and the first char in the $old string would be returned
+    if (isset($old['body'])) {
+      // @TODO: do something to display format changes, also consider teaser_include
+      // @TODO: will need to trim the body_field somehow
+      // also support other text input for other modules wishing to delegate?
+      $outgoing = check_markup($old['body'], $old['format'], TRUE);
+      $incoming = check_markup($new['body'], $new['format'], TRUE);
+      return array($outgoing, $incoming);
+    }
+  }
+  
+  // not particulary interested on a symmetric diff for any case (until now)
+  
+  if (isset($theme)) {
+    $outgoing = theme($theme, $old);
+    $incoming = theme($theme, $new);
+  }
+  else {
+    $outgoing = check_plain($old);
+    $incoming = check_plain($new);
+  }
+  return array($outgoing, $incoming);
+}
+
+/**
+ * Implementation of hook_theme()
+ */
+function comment_driven_node_theme() {
+  return array(
+    'comment_driven_node_comment_settings' => array(
+      'arguments' => array('flag' => ''),
+    ),
+  );
+}
+
+function _comment_driven_node_diff_body($element, $form_values, $meta) {
+  $key = 'body';
+  $old[$key] = $element[$key]['#default_value'];
+  $new[$key] = $form_values[$key];
+  $key = 'teaser_include';
+  $old[$key] = $element[$key]['#default_value'];
+  $new[$key] = $form_values[$key];
+  
+  // every format has the same #default_value, just pick one
+  $key = 'format';
+  $index = array_shift(element_children($element[$key]));
+  $old[$key] = $element[$key][$index]['#default_value'];
+  $new[$key] = $form_values[$key];
+  // ignore body_field:teaser_js, since it gets into body in node_teaser_js
+  
+  // format and teaser_include need to be normalized as non-array values
+  // therefore, shouldn't compare them as array (not keyed nor values)
+  // normalize $new values to match #default_value format
+  $keys = array('body', 'format', 'teaser_include');
+  // won't break the loop at first sight, since we are normalizing
+  // all the three values passing $new[$key] by ref 
+  $equal = array();
+  foreach ($keys as $key) {
+    $equal[$key] = _comment_driven_equal_non_array($old[$key], $new[$key]);
+  }
+  
+  if ($equal['body'] && $equal['format'] && $equal['teaser_include']) return FALSE;
+  return array($old, $new);
+}
+
+function theme_comment_driven_node_comment_settings($flag) {
+  // @TODO: temporary making it receive the same array saved by diff_values
+  $flag = array_shift($flag); // not sure if it would worth unwrapping comment settings at diff_values
+  switch ($flag) {
+    case 0:
+      $meaning = t('Disabled');
+      $class = 'disabled';
+      break;
+    case 1:
+      $meaning = t('Read only');
+      $class = 'read-only';
+      break;
+    case 2:
+      $meaning = t('Read/Write');
+      $class = 'read-write';
+      break;
+  }
+  return '<span class="comment-settings ' . $class . '">' . $meaning . '</span>';
 }

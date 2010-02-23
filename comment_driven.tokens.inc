@@ -30,15 +30,16 @@ function comment_driven_token_values($type, $object = NULL) {
     
     if ($log = comment_driven_load_log($comment->cid)) {
       $node_type = node_get_types('type', node_load($comment->nid))->type;
-      $live_render = variable_get('comment_driven:live_render_' . $node_type, 0);
+      $live_render = comment_driven_is_live_render($node_type);
+      $diff_render = $live_render ? comment_driven_diff_render($node_type, $log->changes) : $log->diff_render;
       
-      $render_diff = $live_render ? comment_driven_render_diff($log->changes) : $log->render_diff;
-      foreach ($render_diff as $keyed_row) {
+      for ($render_index = 0; $render_index < count($diff_render); $render_index++) {
+        extract($diff_render[$render_index]); // $label, $outgoing, $incoming
         $rows[] = array(
-          strip_tags($keyed_row['label']) . ':', 
-          strip_tags($keyed_row['old']), 
+          strip_tags($label) . ': ', 
+          strip_tags($outgoing), 
           '&raquo;', 
-          strip_tags($keyed_row['new'])
+          strip_tags($incoming),
         );
       }
       $tokens['comment-driven-diff-table'] = theme('comment_driven_simple_table', $rows);

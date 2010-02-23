@@ -52,12 +52,12 @@ function comment_driven_schema() {
         'description' => 'The changes made.',
       ),
       // properties might no longer exist suddenly
-      // render has to be made instantly and kept
-      'render_diff' => array(
+      // a backup render has to be made instantly and kept
+      'diff_render' => array(
         'type' => 'text',
         'not null' => TRUE,
         'size' => 'big',
-        'description' => 'The rendered changes.',
+        'description' => 'The pre-rendered changes and their theme instructions.',
       ),
       // won't be updated when editing the comment
       // that's why not using {comments}.timestamp

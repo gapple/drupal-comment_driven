@@ -7,6 +7,8 @@
 function comment_driven_cck_driven_properties($node_type) {
   $available_props = array();
   
+  $prefix = t('CCK') . ' » ';
+  
   // according to content_field_overview_form:
   // When displaying the form, make sure the list of fields is up-to-date.
   content_clear_type_cache();
@@ -21,51 +23,119 @@ function comment_driven_cck_driven_properties($node_type) {
     $groups = fieldgroup_groups($cck_type['type']);
   }
   
+  $grouped_paths = array();
   // first lookup the groups to discriminate nested fields
   foreach ($groups as $group_name => $group) {
     foreach ($group['fields'] as $field_name => $field) {
-      $available_props['cck:' . $group_name . ':' . $field_name] = 'CCK &raquo; ' . $group_name . ' &raquo; ' . $field_name;
-      unset($fields[$field_name]);
+      $property_paths[$field_name] = $group_name;
     }
   }
-  
+
   // lookup fields withtout group
   foreach ($fields as $field_name => $field) {
-    $available_props['cck:' . $field_name] = 'CCK &raquo; ' . $field_name;
+    // pack info for later use
+    $meta = compact('node_type', 'field_name');
+  
+    if (isset($grouped_paths[$field_name])) {
+      $group_name = $grouped_paths[$field_name];
+      $group_path_prefix = $group_name . ':';
+      $group_title_prefix = $group_name . ' » ';
+    }
+    else {
+      $group_name = NULL;
+      $group_path_prefix = '';
+      $group_title_prefix = '';
+    }
+    
+    $available_props[$group_path_prefix . $field_name] = array(
+      'realm' => 'cck',
+      'meta' => $meta,
+      'type_settings' => array(
+        '#title' => $prefix . $group_title_prefix . $field['widget']['label'],
+/*
+        // the more elemental the lighter
+        // (core required: -5, core optional: -2, CCK: 1, CCK submod: 2)
+        '#weight' => 1,
+*/
+      ),
+    );
+    
+    if (!in_array($field['module'], array('userreference', 'nodereference', 'number', 'text', 'optionwidgets'))) {
+      $available_props[$group_path_prefix . $field_name]['type_settings'] += array(
+        '#description' => t('Pending %module support.', array('%module' => $field['module'])),
+        '#disabled' => TRUE,
+        '#value' => FALSE,
+        '#weight' => 10, // sink
+      );
+    }
   }
   
   return $available_props;
 }
 
 /**
- * Implements comment_driven_[element_kind]_bypass_property().
+ * Implements hook_diff_values().
  */
-function comment_driven_cck_bypass_property($node_type, $element_path, $element) {
-  if (!isset($element['#field_name'])) {
-    // don't know what could it be, but definitely not the field itself
-    // just in case a CCK field implements its own magic (beyond what CCK already does)
-    return TRUE;
-  }
-  // if it is a sub-item then its parent is just an items wrapper
-  $separated_item = !isset($element['#default_value'][$element['#delta']]);
-  return !$separated_item;
-}
-
-/**
- * Implements comment_driven_[element_kind]_equal().
- */
-function comment_driven_cck_equal($element, &$value, &$meta = array()) {
+function comment_driven_cck_diff_values($element, $form_values, $meta) {
   // $value will be normized by if needed (per case basis)
   // to match #default_value format instead of $form_state['values']
   
-  $default = $element['#default_value'];
+  extract($meta); // $node_type, $field_name
+
+  $field = comment_driven_cck_get_field($field_name, $node_type);
+  if (!$field) {
+    // can't guess, can't normalize $value
+    // can't afford being asked for diff_render
+    return FALSE; // nothing to declare (i.e. return no diff_values)
+  }
+
+  // if values are not at this level go deep through
+  if (!isset($element['#default_value'])) {
+    if (!count(element_children($element))) {
+      // bypass (it should be add_more or something else)
+      return FALSE;
+    }
+    
+    foreach (element_children($element) as $key) {
+      $diff_values = comment_driven_cck_diff_values($element[$key], $form_values, $meta);
+      if (!$diff_values) continue;
+      
+      list($old, $new) = $diff_values;
+      // @TODO: revisit
+      // index with $key? (e.g. uid, nid, numeric deltas, etc)
+      // (reseted indexes wouldn't harm, but wouldn't be accurate either)
+      $olds[] = $old;
+      $news[] = $new;
+    }
+    
+    if (empty($olds) && empty($news)) return FALSE;
+    return array($olds, $news);
+  }
   
-  $node_type = $element['#type_name'];
-  $field_name = $element['#field_name'];
-  // Gather type information.
-  $cck_type = content_types($node_type);
-  $fields = $cck_type['fields'];
-  $field = $fields[$field_name];
+  // this is done here, since it depends on $field['multiple']
+  // which may vary in time (therefore can't be set into $meta at hook_driven_properties)
+  // multiple:
+  // 0 = FALSE => single value
+  // 1 = TRUE => Ulimited => AHAH add_more
+  // 2+ = TRUE => Limited
+  //
+  // see content_field_form
+  //
+  // If the widget is handling multiple values (e.g optionwidgets),
+  // or selecting an individual element, just get a single form
+  // element and make it the $delta value.
+  //
+  // If we're processing a specific delta value for a field where the
+  // content module handles multiples, set the delta in the result.
+  // For fields that handle their own processing, we can't make assumptions
+  // about how the field is structured, just merge in the returned value.
+  //
+  // @TODO: @per-module-discrimination: "can't make assumptions about how the field is structured"
+
+  $default = $element['#default_value'];
+  // $value will be normized if needed (per case basis)
+  // to match #default_value format instead of $form_state['values']
+  $value = comment_driven_form_get_value($element['#parents'], $form_values);
   
   $node = (object)array(
     'type' => $node_type, 
@@ -80,9 +150,6 @@ function comment_driven_cck_equal($element, &$value, &$meta = array()) {
   // discriminate based on whether #default_value is an array of delta=>item
   // or just an direct item (without the wrapper parent)
   $separated_item = !isset($element['#default_value'][$element['#delta']]);
-  
-  // pack info for render time
-  $meta = compact('node_type', 'field_name', 'separated_item');
   
   // wrap separated item into items
   if ($separated_item) {
@@ -129,45 +196,37 @@ function comment_driven_cck_equal($element, &$value, &$meta = array()) {
     unset($value['_weight'], $value['_error_element']);
   }
   
-  // $value is no longer passed by ref
-  return _comment_driven_equal_keyed_array_in_depth($default, $value);
+  // from this point $value is no longer passed by ref
+  if (comment_driven_equal_keyed_array_in_depth($default, $value)) return FALSE;
+  return array($default, $value);
 }
 
 /**
- * Implements comment_driven_[element_kind]_label().
+ * Implements hook_diff_render().
  */
-//function comment_driven_cck_label($element, $parents_titles) {
-//  return comment_driven_first_title($element, $parents_titles);
-//}
+function comment_driven_cck_diff_render($old, $new, $meta) {
+  extract($meta); // $node_type, $field_name
 
-/**
- * Implements comment_driven_[element_kind]_render_diff().
- */
-function comment_drivent_cck_render_diff($old, $new, $meta) {
-  // unpack info: $node_type, $field_name, $separated_item
-  extract($meta);
-  
-  // Gather type information.
-  $cck_type = content_types($node_type);
-  $fields = $cck_type['fields'];
-  $field = $fields[$field_name];
+  $field = comment_driven_cck_get_field($field_name, $node_type);
+  if (!$field) {
+    // can't say, but if we got here was because diff_values delivered something
+    // (either deliberately or for real in a time the vocabulary existed)
+    return array('?', '?');
+  }
   
   $node = (object)array(
     'type' => $node_type, 
     'build_mode' => NODE_BUILD_NORMAL
   );
 
-  // wrap separated item into items
-  if ($separated_item) {
-    $old = array($old);
-    $new = array($new);
-  }
-  
   list($old, $new) = comment_driven_symmetric_diff($old, $new);
   
   $function = $field['module'] . '_field';
   if (function_exists($function)) {
+    $function('sanitize', $node, $field, $old, FALSE, TRUE);
     $old_view = $function('view', $node, $field, $old, FALSE, TRUE);
+    
+    $function('sanitize', $node, $field, $new, FALSE, TRUE);
     $new_view = $function('view', $node, $field, $new, FALSE, TRUE);
   }
   // the module might implement hook_field but not  necessarily the 'view' operation 
@@ -176,24 +235,48 @@ function comment_drivent_cck_render_diff($old, $new, $meta) {
     $new_view = content_field('view', $node, $field, $new, FALSE, TRUE);
   }
   
-  $old_rendered = array();
-  $new_rendered = array();
+  $outgoing = array();
+  $incoming = array();
   $classes = array($field['type'], $field['field_name']);
   // old/new delta don't have to match
+  
   foreach ($old_view[$field_name]['field']['items'] as $delta => $item) {
     $rendered = drupal_render($item);
     if (!empty($rendered)) {
-      if ($field['multiple']) $rendered = theme('comment_driven_outgoing_diff', $rendered, $classes);
-      $old_rendered[] = $rendered;
+      if ($field['multiple']) {
+        $rendered = theme('comment_driven_outgoing_diff', $rendered, $classes);
+      }
+      $outgoing[] = $rendered;
     }
   }
   foreach ($new_view[$field_name]['field']['items'] as $delta => $item) {
     $rendered = drupal_render($item);
     if (!empty($rendered)) {
-      if ($field['multiple']) $rendered = theme('comment_driven_incoming_diff', $rendered, $classes);
-      $new_rendered[] = $rendered;
+      if ($field['multiple']) {
+        $rendered = theme('comment_driven_incoming_diff', $rendered, $classes);
+      }
+      $incoming[] = $rendered;
     }
   }
   
-  return array($old_rendered, $new_rendered);
+  return array($outgoing, $incoming);
+}
+
+function comment_driven_cck_get_field($field_name, $node_type) {
+  // Gather type information.
+  $cck_type = content_types($node_type); // at least returns a virgen field definition
+  $fields = $cck_type['fields']; // if virgen it would be an empty array
+  if (empty($fields[$field_name])) {
+    comment_driven_cck_warn_field_not_found($field_name, $node_type);
+    return FALSE;
+  }
+  return $fields[$field_name];
+}
+
+function comment_driven_cck_warn_field_not_found($field_name, $node_type) {
+  $details = t('Field %field couldn\'t be fetched for content type %type.', array(
+    '%field' => $field_name, 
+    '%type' => $node_type,
+  ));
+  comment_driven_warn_inaccurate_diff($details);
 }

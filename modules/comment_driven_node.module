@@ -5,23 +5,126 @@
  * Implements hook_driven_properties().
  */
 function comment_driven_node_driven_properties($node_type) {
-  $prefix = t('Node') . ' &raquo; ';
-  $available_props = array(
-    'node:title' => $prefix . t('Title'),
-    // body_field:body, body_field:format, body_field:teaser_include, body_field:teaser_js
-    'node:body_field' => $prefix . t('Body'),
-    'node:options:status' => $prefix . t('Published'), 
-    'node:options:promote' => $prefix . t('Promoted to front page'), 
-    'node:options:sticky' => $prefix . t('Sticky at top of lists'), 
-    'node:comment_settings' => $prefix . t('Comment settings'),
-    // revision info makes no sence, since it isn't a node property (and always starts being empty)
-    //'node:revision_information:log' => $prefix . t('Revision log message'),
+  $available_props = array();
+
+  $prefix = t('Node') . ' » ';
+  
+  $available_props['title'] = array(
+    'realm' => 'node',
+    'type_settings' => array(
+      '#title' => $prefix . t('Title'),
+    ),
   );
+  
+  // body_field:body, body_field:format,
+  // body_field:teaser_include, body_field:teaser_js
+  $formatted_text = array(
+    'text' => 'body',
+    'format' => 'format',
+  );
+  $available_props['body_field'] = array(
+    'realm' => 'node',
+    'meta' => compact('formatted_text'),
+    'exclude' => array('teaser_include', 'teaser_js'), // @TODO: revisit
+    'type_settings' => array(
+      '#title' => $prefix . t('Body'),
+    ),
+  );
+  
+  $theme = 'comment_driven_yes_no';
+  $available_props['options:status'] = array(
+    'realm' => 'node',
+    'meta' => compact('theme'),
+    'type_settings' => array(
+      '#title' => $prefix . t('Published'),
+    ),
+  );
+  
+  $label = t('Promoted');
+  $theme = 'comment_driven_yes_no';
+  $available_props['options:promote'] = array(
+    'realm' => 'node',
+    'label' => $label, // default would be: 'Promoted to front page'
+    'meta' => compact('theme'),
+    'type_settings' => array(
+      '#title' => $prefix . $label,
+    ),
+  );
+  
+  $label = t('Sticky');
+  $theme = 'comment_driven_yes_no';
+  $available_props['options:sticky'] = array(
+    'realm' => 'node',
+    'label' => $label, // default would be: 'Sticky at top of lists'
+    'meta' => compact('theme'),
+    'type_settings' => array(
+      '#title' => $prefix . $label,
+    ),
+  );
+  
+  $available_props['comment_settings'] = array(
+    'realm' => 'node',
+    'label' => t('Comments'), // default would be: 'Comment settings'
+    'type_settings' => array(
+      '#title' => $prefix . t('Comment settings'),
+    ),
+  );
+  
+  $theme = 'comment_driven_username';
+  $available_props['authored:name'] = array(
+    'realm' => 'node',
+    'meta' => compact('theme'),
+    'type_settings' => array(
+      '#title' => $prefix . t('Authored by'),
+    ),
+  );
+  
+  $available_props['authored:date'] = array(
+    'realm' => 'node',
+    'type_settings' => array(
+      '#title' => $prefix . t('Authored on'),
+    ),
+  );
+  
+  // revision info makes no sence, since it isn't a node property
+  // it always starts being empty log with a checkbox following content type settings
+  // therefore, changing them would always display the same old value
+  // and the new value will be accurate, but next change will reflect
+  // coming from same status than its precedents...
+  /*
+  $label = t('New revision');
+  $theme = 'comment_driven_yes_no';
+  $available_props['revision_information:revision'] = array(
+    'realm' => 'node',
+    'label' => $label, // default would be: 'Create new revision'
+    'meta' => compact('theme'),
+    'type_settings' => array(
+      '#title' => $prefix . t('Revision') . ' » ' . $label,
+    ),
+  );
+  
+  $available_props['revision_information:log'] = array(
+    'realm' => 'node',
+    'label' => t('Revision log'), // default would be: 'Log message'
+    'type_settings' => array(
+      '#title' => $prefix . t('Revision') . ' » ' . t('Log'),
+    ),
+  );
+  */
+  
+/*
+  foreach ($available_props as $property_path => &$prop) {
+    // the more elemental the lighter
+    // (core required: -5, core optional: -2, CCK: 1, CCK submod: 2)
+    $prop['type_settings']['#weight'] = -5;
+  }
+*/
+  
   return $available_props;
 }
 
 /**
- * Implements comment_driven_[element_kind]_bypass_property().
+ * Implements hook_bypass_property().
  */
 function comment_driven_node_bypass_property($node_type, $element_path, $element) {
   // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
@@ -32,22 +135,22 @@ function comment_driven_node_bypass_property($node_type, $element_path, $element
 }
 
 /**
- * Implements comment_driven_[element_kind]_label().
+ * Implements hook_label().
  */
 //function comment_driven_node_label($element, $parents_titles) {
 //  return comment_driven_first_title($element, $parents_titles);
 //}
 
 /**
- * Implements comment_driven_[element_kind]_equal().
+ * Implements hook_equal_values().
  */
-function comment_driven_node_equal($element, &$value, &$meta = array()) {
+function comment_driven_node_equal_values($element, &$value, &$meta = array()) {
   // @TODO: consider body_field:format as well as CCK text does
   return _comment_driven_equal_non_array($element, $value); 
 }
 
 /**
- * Implements comment_driven_[element_kind]_render_diff().
+ * Implements hook_diff_render().
  */
 function comment_drivent_node_render_diff($old, $new, $meta) {
   // @TODO: some $meta might come handy

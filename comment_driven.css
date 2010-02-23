@@ -9,6 +9,15 @@ table.comment_driven tr td, table.comment_driven tr th {
   padding: 0 .3em;
 }
 
+table.comment_driven tr td *, table.comment_driven tr th * {
+  display: inline;
+  white-space: nowrap;
+}
+
+.comment_driven.diff.preview {
+  display: table;
+}
+
 .diff.outgoing-diff {
   /* text-decoration: line-through; */
 }

@@ -33,14 +33,11 @@ function comment_driven_token_values($type, $object = NULL) {
       $live_render = comment_driven_is_live_render($node_type);
       $diff_render = $live_render ? comment_driven_diff_render($node_type, $log->changes) : $log->diff_render;
       
-      for ($render_index = 0; $render_index < count($diff_render); $render_index++) {
-        extract($diff_render[$render_index]); // $label, $outgoing, $incoming
-        $rows[] = array(
-          strip_tags($label) . ': ', 
-          strip_tags($outgoing), 
-          '&raquo;', 
-          strip_tags($incoming),
-        );
+      $rows = comment_driven_diff_summary_rows($diff_render);
+      foreach($rows as $index => $row) {
+        $rows[$index][0] = strip_tags($row[0]); // label
+        $rows[$index][1] = strip_tags($row[1]); // outgoing
+        $rows[$index][3] = strip_tags($row[3]); // incoming
       }
       $tokens['comment-driven-diff-table'] = theme('comment_driven_simple_table', $rows);
       $tokens['comment-driven-diff-ulist'] = theme('comment_driven_simple_ulist', $rows);

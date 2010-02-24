@@ -18,7 +18,6 @@ function theme_comment_driven_simple_ulist($rows = array()) {
   $output = '<ul>';
   foreach ($rows as $row) {
     $output .= '<li>' . implode(' ', $row) . '</li>';
-    $output .= '</li>';
   }
   $output .= '</ul>';
   return $output;

@@ -552,7 +552,7 @@ function comment_driven_form_alter(&$form, &$form_state, $form_id) {
     // (note that if $form['#theme'] is not set over here it will receive $ned_form['#theme'] when added)
     // usually comment_form comes without #theme (and the disguised won't be themed neither)
     // alternate our suggestions with traditional node_form suggestions
-    $form['#theme'] = array($node_type . '_driven_form', $node_tyep . '_node_form', 'driven_form', 'node_form');
+    $form['#theme'] = array($node_type . '_driven_form', $node_type . '_node_form', 'driven_form', 'node_form');
     
     // final modifications to $ned_form before copying it to the comment's form
      // avoid name clash between 'Preview' buttons at node/comment forms
@@ -600,7 +600,7 @@ function comment_driven_form_alter(&$form, &$form_state, $form_id) {
     // it will hold the node_form
     $form['driven_node'] = array(
       '#type' => 'fieldset',
-      '#title' => t('Driven @type', array('@type' => $type_name)),
+      '#title' => variable_get('comment_driven:fieldset:title_' . $node_type, t('Driven @type', array('@type' => $type_name))),
       '#collapsible' => TRUE,
       '#collapsed' => variable_get('comment_driven:fieldset:collapsed_' . $node_type, 1),
       // DOM id to grab it, non-visible when JS is disabled

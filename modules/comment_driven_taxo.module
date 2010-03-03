@@ -70,10 +70,26 @@ function comment_driven_taxo_diff_values($element, $form_values, $meta) {
       // otherwise plain number (tid)
       if ($element['#multiple']) {
         $value = array_values($value);
+        
+        // handle option "none"
+        // even when $value may have several integer elements
+        // option "none" might be selected as well
+        // being an empty string which
+        // shouldn't be delivered to be compared against int or NULL
+        // since there is no tid=0, we can filter empty elements
+        $value = array_filter($value); // normalized to #default_value format
+        
         if (comment_driven_equal_array_values($default, $value)) return FALSE;
       }
       else {
         $default = array_shift($default);
+        
+        // handle option "none"
+        if ($value === '') {
+          // shouldn't deliver string to be compared against int or NULL
+          $value = NULL; // normalized to #default_value format
+        }
+        
         if (_comment_driven_equal_non_array($default, $value)) return FALSE;
       }
       break;
@@ -131,15 +147,26 @@ function comment_driven_taxo_diff_values($element, $form_values, $meta) {
       
       // lineage <=> multiple (guaranteed by HS on vocabulary submit)
       if ($voc->multiple) {
+        // handle option "none"
+        // $value is set to NULL by HS
+        if (is_null($value)) {
+          $value = array(); // normalized to #default_value format 
+        }
+        
         // if HS is gonna save the lineage we can't ignore ascendants
         if (comment_driven_equal_array_values($default, $value)) return FALSE;
       }
       else {
+        // handle option "none" is not a needed
+        // since $value is set to NULL by HS
+        // while $default would be an empty array
+        // and $default[0] would be NULL
+        // but for the sake of code we'll check it
+        
         // Note that for we normalize #default_value as well
         // because HS always uses an array (read above)
-        $default = $default[0];
-        // read above to know why checking on multiple when HS doesn't care about it
-        $value = $voc->multiple ? $value[0] : $value;
+        // and we intend to match core's taxonomy data format
+        $default = empty($default) ? NULL : $default[0];
         if (_comment_driven_equal_non_array($default, $value)) return FALSE;
       }
       break;
@@ -290,10 +317,15 @@ function comment_driven_taxo_diff_render($old, $new, $meta) {
     if ($wrapped) {
       // we got plain tids, but lets use the same code bellow
       // temporary convert them to arrays
-      $old = array($old);
-      $new = array($new);
+      
+      // according to core's taxonomy
+      // option "none" will come as NULL for single select
+      $old = is_null($old) ? array() : array($old);
+      $new = is_null($new) ? array() : array($new);
     }
     else {
+      // according to core's taxonomy
+      // option "none" is filtered out for multiple select
       list($old, $new) = comment_driven_symmetric_diff($old, $new);
     }
       

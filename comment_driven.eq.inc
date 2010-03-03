@@ -162,6 +162,13 @@ function _comment_driven_equal_non_array($default, &$value) {
   // $value will be normized if needed (per case basis)
   // to match #default_value format instead of $form_state['values']
   
+  // can't know the intended type for NULL
+  // the caller function must be reponsible of normalization
+  // (e.g. case 'select' in comment_driven_taxo_diff_values)
+  if (is_null($default) || is_null($value)) {
+    return (is_null($default) && is_null($value));
+  }
+  
   if (is_bool($default) && is_int($value)) { 
     $value = (bool)$value; 
   }

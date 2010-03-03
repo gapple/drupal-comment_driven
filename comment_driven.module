@@ -724,7 +724,7 @@ function comment_driven_validate($form, &$form_state) {
   // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage
   // after_build is too early to check if $form['#cache'] has been changed
   // which is the very last step in form_builder (form.inc) 
-  if (!empty($form['#cache'])) {
+  if (!empty($form['#cache']) && (COMMENT_DRIVEN__ASSERTIONS & COMMENT_DRIVEN__ASSERTIONS__DISPLAY)) {
     // @TODO: no translatable since it is for development purposes only
     drupal_set_message('DEV Note: the node form is being cached (is an AHAH element being used?)', 'warning', FALSE);
   }

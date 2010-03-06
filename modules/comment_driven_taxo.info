@@ -6,10 +6,3 @@ core = 6.x
 dependencies[] = comment_driven
 dependencies[] = taxonomy
 
-
-; Information added by drupal.org packaging script on 2010-02-23
-version = "6.x-1.0-unstable3"
-core = "6.x"
-project = "comment_driven"
-datestamp = "1266896704"
-

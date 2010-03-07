@@ -12,6 +12,7 @@ table.comment_driven tr td, table.comment_driven tr th {
 table.comment_driven tr td *, table.comment_driven tr th * {
   display: inline;
   white-space: nowrap;
+  float: none; /* e.g filefield-icon */
 }
 
 .comment_driven.diff.preview {

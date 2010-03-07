@@ -104,7 +104,7 @@ function _comment_driven_elem_changes($driven_props, $element, $form_values, $as
     foreach (element_children($element) as $key) {
       // bypass inaccesible elements (e.g. some form values, hiddens)
       // also ingore diguised comment form elements
-      if ($element[$key]['#access'] === FALSE || strpos($key, 'driven:') === 0) {
+      if ($element[$key]['#access'] === FALSE || strpos($key, COMMENT_DRIVEN__DISGUISE_PREFIX) === 0) {
         continue;
       }
       

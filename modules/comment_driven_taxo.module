@@ -157,7 +157,7 @@ function comment_driven_taxo_diff_values($element, $form_values, $meta) {
         if (comment_driven_equal_array_values($default, $value)) return FALSE;
       }
       else {
-        // handle option "none" is not a needed
+        // handle option "none" is not needed
         // since $value is set to NULL by HS
         // while $default would be an empty array
         // and $default[0] would be NULL

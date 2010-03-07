@@ -60,7 +60,16 @@ function comment_driven_cck_driven_properties($node_type) {
       ),
     );
     
-    if (!in_array($field['module'], array('userreference', 'nodereference', 'number', 'text', 'optionwidgets'))) {
+    $supported_modules = array(
+      'userreference', 
+      'nodereference', 
+      'number', 
+      'text', 
+      'optionwidgets', 
+      'filefield', 
+      'date',
+    );
+    if (!in_array($field['module'], $supported_modules)) {
       $available_props[$group_path_prefix . $field_name]['type_settings'] += array(
         '#description' => t('Pending %module support.', array('%module' => $field['module'])),
         '#disabled' => TRUE,
@@ -139,6 +148,42 @@ function comment_driven_cck_diff_values($element, $form_values, $meta) {
   // $value will be normized if needed (per case basis)
   // to match #default_value format instead of $form_state['values']
   $value = comment_driven_form_get_value($element['#parents'], $form_values);
+
+  switch ($field['type']) {
+    // @per-module-discrimination: support filefield
+    case 'filefield':
+      // remove from $value keys which are not present in $default
+      $keys = array_diff(array_keys($value), array_keys($default));
+      foreach ($keys as $key) {
+        unset($value[$key]);
+      }
+      break;
+      
+    case 'date':
+      // doc in _date_widget states:
+      // It would seem to make sense to do this conversion when the data
+      // is loaded instead of when the form is created, but the loaded
+      // field data is cached and we can't cache dates that have been converted
+      // to the timezone of an individual user, so we cache the UTC values
+      // instead and do our conversion to local dates in the form and
+      // in the formatters.
+      $timezone = date_get_timezone($field['tz_handling'], isset($default['timezone']) ? $default['timezone'] : date_default_timezone_name());
+      $process = date_process_values($field);
+      foreach ($process as $processed) {
+        if (!isset($value[$processed])) {
+          $value[$processed] = '';
+        }
+        $date = date_local_date(NULL, NULL, NULL, $value, $timezone, $field, $processed);
+        $value[$processed] = is_object($date) ? date_format($date, DATE_FORMAT_DATETIME) : '';
+      }
+
+      // copy from $default keys which are not present in $value
+      $keys = array('timezone_db', 'date_type');
+      foreach ($keys as $key) {
+        $value[$key] = $default[$key];
+      }
+      break;
+  }
   
   $node = (object)array(
     'type' => $node_type, 

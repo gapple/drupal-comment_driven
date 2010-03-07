@@ -1,6 +1,8 @@
 <?php
 // $Id$
 
+define('COMMENT_DRIVEN__DISGUISE_PREFIX', 'cdriven-');
+
 module_load_include('inc', 'comment_driven', 'comment_driven.tokens');
 
 // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
@@ -106,10 +108,21 @@ function comment_driven_form_node_type_form_alter(&$form, &$form_state) {
   $form['comment_driven'][$varname] = array(
     '#type' => 'checkbox',
     '#title' => t('Allow empty comments'),
-    '#description' => t('When selected empty comments will be allowed (only if driven properties are changed).'),
+    '#description' => t('Only applies if driven properties are changed.'),
     '#default_value' => variable_get($varname . '_' . $node_type, 1),
   );
 
+// @TODO: FIXME: this is NOT a per content type setting
+// lets make it live here for a while
+  $varname = 'comment_driven:enforce_new_revision';
+  $form['comment_driven'][$varname] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Enforce new revision.'),
+    '#description' => t('Even when the content type may have revisions disabled this option will enforce a new revision whenever there is a driven property change.')
+      . '<br/>TEMP: this is a global setting, misplaced here temporary. (haven\'t created the module\'s settings page yet).',
+    '#default_value' => variable_get($varname, 1), // @TODO: this is NOT a per content type setting, just temporary here
+  );
+  
   $varname = 'comment_driven:fieldset:collapsed';
   $form['comment_driven'][$varname] = array(
     '#type' => 'checkbox',
@@ -257,7 +270,8 @@ function comment_driven_form_node_type_form_alter(&$form, &$form_state) {
 - every taxonomy & cck will have ids, not human-readable values
 -- (except for free tagging, title/body, and a few others)
 */
-    '#description' => t('Warn whenever live render display inaccurate changes.'),
+    '#description' => t('Warn whenever live render display inaccurate changes.')
+      . '<br/>TEMP: this is a global setting, misplaced here temporary (haven\'t created the module\'s settings page yet).',
     '#default_value' => variable_get($varname, 1), // @TODO: this is NOT a per content type setting, just temporary here
   );
 }
@@ -522,7 +536,7 @@ function comment_driven_form_alter(&$form, &$form_state, $form_id) {
     // manually disguise non-children
     $keys = array('#validate', '#submit');
     foreach ($keys as $key) {
-      $form['comment_driven']['#driven:' . $key] = $form[$key];
+      $form['comment_driven']['#' . COMMENT_DRIVEN__DISGUISE_PREFIX . $key] = $form[$key];
       unset($form[$key]);
     }
     // preserve other submit handlers from node_form (e.g. menu_node_form_submit, taxonomy_single_tag_node_form_submit)
@@ -542,6 +556,7 @@ function comment_driven_form_alter(&$form, &$form_state, $form_id) {
     // to add comment_form_add_preview in #after_build
     $after_build = &$form['comment_driven']['#after_build'];
     $after_build = array_diff($after_build, array('comment_form_add_preview'));
+    $after_build[] = 'comment_driven_after_build';
     
     // if has no parent comment use actual node preview (what changes would look like)
     if (!empty($form_state['comment_driven:preview']['#suffix'])) {
@@ -626,15 +641,15 @@ function _comment_driven_disguise($element) {
   if (!is_array($element)) comment_driven_assertion_failed('something nasty is happening somewhere: !is_array($element)');
   
   // adjust #parents to match the disguised elements of comment_form
-  // note that no parent would point to a lever above the comment_form
+  // note that no parent would point to a level above the comment_form
   if (!empty($element['#parents'])) {
     foreach ($element['#parents'] as $index => $parent) {
-      $element['#parents'][$index] = 'driven:' . $parent;
+      $element['#parents'][$index] = COMMENT_DRIVEN__DISGUISE_PREFIX . $parent;
     }
   }
   
   foreach (element_children($element) as $key) {
-    $element['driven:' . $key] = _comment_driven_disguise($element[$key]);
+    $element[COMMENT_DRIVEN__DISGUISE_PREFIX . $key] = _comment_driven_disguise($element[$key]);
     unset($element[$key]);
   }
   return $element;
@@ -644,8 +659,8 @@ function _comment_driven_undisguise($element) {
   // reverse disguised #parents
   if (!empty($element['#parents'])) {
     foreach ($element['#parents'] as $index => $parent) {
-      if (strpos($parent, 'driven:') === 0) {
-        $element['#parents'][$index] = substr($parent, strlen('driven:'));
+      if (strpos($parent, COMMENT_DRIVEN__DISGUISE_PREFIX) === 0) {
+        $element['#parents'][$index] = substr($parent, strlen(COMMENT_DRIVEN__DISGUISE_PREFIX));
       }
     }
   }
@@ -654,9 +669,9 @@ function _comment_driven_undisguise($element) {
     if (is_array($element[$key])) {
       $element[$key] = _comment_driven_undisguise($element[$key]);
     }
-    $pos = strpos($key, 'driven:');
+    $pos = strpos($key, COMMENT_DRIVEN__DISGUISE_PREFIX);
     if ($pos === 0 || $pos == 1) {
-      $comment_key = substr($key, $pos + strlen('driven:'));
+      $comment_key = substr($key, $pos + strlen(COMMENT_DRIVEN__DISGUISE_PREFIX));
       $element[$comment_key] = $element[$key];
       unset($element[$key]);
     }
@@ -664,11 +679,28 @@ function _comment_driven_undisguise($element) {
   return $element;
 }
 
-// only first level 'driven:' prefixed values are desired
+function comment_driven_after_build($element, &$form_state) {
+  // restore original comment_form ids
+  // (which is only relevant from a theme support standpoint)
+  _comment_driven_restore_ids($element);
+  
+  return $element;
+}
+
+function _comment_driven_restore_ids(&$element) {
+  if (isset($element['#id'])) {
+    $element['#id'] = str_replace(COMMENT_DRIVEN__DISGUISE_PREFIX, '', $element['#id']);
+  }
+  foreach (element_children($element) as $key) {
+    _comment_driven_restore_ids($element[$key]);
+  }
+}
+
+// only first level COMMENT_DRIVEN__DISGUISE_PREFIX prefixed values are desired
 function _comment_driven_extract_state_values($state_values) {
   $values = array();
   foreach (array_keys($state_values) as $key) {
-    if (strpos($key, 'driven:') === 0) { 
+    if (strpos($key, COMMENT_DRIVEN__DISGUISE_PREFIX) === 0) { 
       $values[$key] = $state_values[$key];
     }
   }
@@ -755,7 +787,7 @@ function comment_driven_validate($form, &$form_state) {
   
   // report comment body as required if no changes
   if (empty($changes) && variable_get('comment_driven:empty_comment_' . $node_type, 1)) {
-    $element = $form['comment_driven']['driven:comment_filter']['driven:comment'];
+    $element = $form['comment_driven'][COMMENT_DRIVEN__DISGUISE_PREFIX . 'comment_filter'][COMMENT_DRIVEN__DISGUISE_PREFIX . 'comment'];
     if (strlen(trim($element['#value'])) == 0) {
       form_error($element, t('Comment field is required (or a driven property change otherwise).'));
     }
@@ -838,6 +870,10 @@ function comment_driven_submit($form, &$form_state) {
     //since it got boolean 'revision' populated
     $node = $form['#node']; 
     $node_type = $node->type;
+    
+    if (variable_get('comment_driven:enforce_new_revision', 1)) {
+      $node->revision = $form_state['values']['revision'] = TRUE;
+    }
     
     // properties might no longer exist suddenly
     // a backup render has to be made instantly and kept

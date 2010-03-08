@@ -63,6 +63,21 @@ function comment_driven_perm() {
 }
 
 /**
+ * Implements hook_menu().
+ */
+function comment_driven_menu() {
+  $menu['admin/settings/comment_driven'] = array(
+    'title' => 'Comment driven global settings',
+    'description' => 'Global settings for comment driven',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('comment_driven_settings'),
+    'access arguments' => array('administer site configuration'),
+    'file' => 'comment_driven.admin.inc',
+  );
+  return $menu;
+}
+
+/**
  * Implements hook_form_FORM_ID_alter().
  */
 function comment_driven_form_node_type_form_alter(&$form, &$form_state) {
@@ -75,11 +90,23 @@ function comment_driven_form_node_type_form_alter(&$form, &$form_state) {
     $type = $form['#node_type'];
     $node_type = $type->type;
     $type_name = $type->name;
+    
+    // provide more accurate description for "Create new revisions" in "Workflow settings" fieldset
+    // (only if it is disabled but being enforced on driven property changes)
+    if (variable_get('comment_driven:enabled_' . $node_type, 0) && variable_get('comment_driven:enforce_new_revision', 1)) {
+      $node_options = variable_get('node_options_' . $node_type, array('status', 'promote'));
+      if (!in_array('revision', array_values($node_options))) {
+        $description = &$form['workflow']['node_options']['#description'];
+        $description .= '<br/>' . t('Note that a new revision will be enforced whenever driven properties perceive a change.');
+        $description .= ' ' . t('You can disable such behavior in the !driven_settings', array('!driven_settings' => l(t('global settings page of comment driven'), 'admin/settings/comment_driven')));
+      }
+    }
   }
   
   $form['comment_driven'] = array(
     '#type' => 'fieldset',
     '#title' => t('Comment driven'),
+    '#description' => t('There are !global_settings which affect the behavior of every content type with comment driven enabled.', array('!global_settings' => l(t('global settings'), 'admin/settings/comment_driven'))),
     '#collapsible' => TRUE,
     '#collapsed' => TRUE,
     //'#weight' => 1,
@@ -112,17 +139,6 @@ function comment_driven_form_node_type_form_alter(&$form, &$form_state) {
     '#default_value' => variable_get($varname . '_' . $node_type, 1),
   );
 
-// @TODO: FIXME: this is NOT a per content type setting
-// lets make it live here for a while
-  $varname = 'comment_driven:enforce_new_revision';
-  $form['comment_driven'][$varname] = array(
-    '#type' => 'checkbox',
-    '#title' => t('Enforce new revision.'),
-    '#description' => t('Even when the content type may have revisions disabled this option will enforce a new revision whenever there is a driven property change.')
-      . '<br/>TEMP: this is a global setting, misplaced here temporary. (haven\'t created the module\'s settings page yet).',
-    '#default_value' => variable_get($varname, 1), // @TODO: this is NOT a per content type setting, just temporary here
-  );
-  
   $varname = 'comment_driven:fieldset:collapsed';
   $form['comment_driven'][$varname] = array(
     '#type' => 'checkbox',
@@ -230,49 +246,6 @@ function comment_driven_form_node_type_form_alter(&$form, &$form_state) {
       . '<br/><span class="ok">' . t('This option is reversible at any time.') . '</span>'
       . '<br/>' . t('If you are getting weird errors when displaying old comments try turning it off until you find support to figure it out.'),
     '#default_value' => variable_get($varname . '_' . $node_type, 0),
-  );
-
-// @TODO: FIXME: this is NOT a per content type setting
-// lets make it live here for a while
-  // lets babysit restless sitebuilders
-  // gone property/value might not be discriminable when complex queries are used
-  // to know if the missing result was due to a missing property or value
-  // would be too much to ask for error reporting
-  // if the module knows it should detail it in the log
-  // otherwise, be as accurate as possible
-  $varname = 'comment_driven:warn_prop_or_val_gone';
-  $form['comment_driven']['render'][$varname] = array(
-    '#type' => 'checkbox',
-    '#title' => t('Warn live render gone properties/values.'),
-// @TODO: advanced_help
-// when warning: displayed messages should be vage, visitor oriented, logs should be detailed
-// otherwise just avoid crashing and continue 
-///bypasses a property that is no longer supported or displays inaccurate changes due to no longer existing values
-// know that live render should be disabled for this content type
-// or comment_driven_log table should be moderately cleared
-
-// property gone
-// t('(either the property was deleted from the content type or the responsible module got disabled)')
-// @TODO: advanced_help
-// value gone
-/* @TODO: interesting case:
-- free tagging
-- the node has "tag1, tag2"
-- tag1 gets deleted
-- comment driven loads the node_form which doesn't have tag1 any more
--- saving without making any change
---- would register tag1 as removed by the comment
---- the diff for the old value won't be achievable
--- saving the node with "tag1, tag2" again (manually set tag1 back)
---- would re-create tag1
---- the diff won't show any difference
-- diff won't be achievable if can't find the matching term for either of the sides old/new
-- every taxonomy & cck will have ids, not human-readable values
--- (except for free tagging, title/body, and a few others)
-*/
-    '#description' => t('Warn whenever live render display inaccurate changes.')
-      . '<br/>TEMP: this is a global setting, misplaced here temporary (haven\'t created the module\'s settings page yet).',
-    '#default_value' => variable_get($varname, 1), // @TODO: this is NOT a per content type setting, just temporary here
   );
 }
 

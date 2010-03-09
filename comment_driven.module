@@ -622,11 +622,13 @@ function _comment_driven_disguise($element) {
   }
   
   foreach (element_children($element) as $key) {
-    // protect ourself against 3rd parties creating empty children (e.g. [#736968], [#737044])
-    if (is_array($element[$key])) {
+    // protect ourself against 3rd parties creating NULL children (e.g. [#736968], [#737044])
+    // lets babysit NULL children, but it has to be an array otherwise
+    if (!is_null($element[$key])) {
       $element[COMMENT_DRIVEN__DISGUISE_PREFIX . $key] = _comment_driven_disguise($element[$key]);
-      unset($element[$key]);
     }
+    // if it was NULL (above babysitting) won't hurt clearing it
+    unset($element[$key]);
   }
   return $element;
 }

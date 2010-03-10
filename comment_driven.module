@@ -781,14 +781,18 @@ function comment_driven_validate($form, &$form_state) {
   module_load_include('inc', 'node', 'node.pages');
   module_load_include('inc', 'comment', 'comment.pages');
   
-  // set on validate to avoid infinite recursion
+  // set our submit handler on validate to avoid infinite recursion
   // comment_driven_submit -> node_form_submit -> node_form_submit_build_node -> form_execute_handlers -> comment_driven_submit
   if ($form_state['values']['op'] == t('Save')) {
-    // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
-    if (count(array_diff($form_state['submit_handlers'], array('comment_form_submit')))) comment_driven_assertion_failed('dropping more $form_state[\'submit_handlers\'] than expected!');
-    
-    // drop comment_form_submit
+    // drop every submit handler,
+    // we'll pick them up and manually handle them on our submit handler
+    // honoring their order and also picking up resulting cid with accuracy
+    // (nevertheless, the main reason for this lazzy submit handler is to avoid the recursion explained above)
     $form_state['submit_handlers'] = array('comment_driven_submit');
+    // OTOH comment_driven_build_preview will drop every submit handler
+    // as comment module used to do with its preview, but in a different fashion
+    // since we convertered Preview from button to actual #type=submit
+    // and moved comment_form's #submit to the Save operation
   }
   $comment_form = _comment_driven_undisguise($form['comment_driven']);
   $comment_form_state = $form_state; // copied

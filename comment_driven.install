@@ -78,3 +78,11 @@ function comment_driven_schema() {
   
   return $schema;
 }
+
+/**
+ * just a menu rebuild.
+ */
+function comment_driven_update_6001() {
+  menu_rebuild();
+  return array(array('success' => TRUE, 'query' => t('Menu was rebuilt to include new global settings page.')));
+}

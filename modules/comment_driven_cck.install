@@ -1,0 +1,27 @@
+<?php
+// $Id$
+
+/**
+ * Implements hook_install().
+ */
+function comment_driven_cck_install() {
+  _comment_driven_cck_update_weight();
+}
+
+function _comment_driven_cck_update_weight() {
+  // after CCK's fieldgroup (9)
+  // to be able to detect fields being changed into/out from its group
+  // (which implies a property path change, i.e. node_form structure is changed as well) 
+  return update_sql("UPDATE {system} SET weight = 10 WHERE name = 'comment_driven_cck' AND type = 'module'");
+}
+
+/**
+ * update weight to go after CCK's fieldgroup.
+ */
+function comment_driven_cck_update_6001() {
+  $ret = array();
+  
+  $ret[] = _comment_driven_cck_update_weight();
+  
+  return $ret;
+}

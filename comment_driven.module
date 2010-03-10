@@ -78,7 +78,7 @@ function comment_driven_menu() {
 }
 
 /**
- * Implements hook_form_FORM_ID_alter().
+ * Implements hook_form_FORM_ID_alter() for node_type_form.
  */
 function comment_driven_form_node_type_form_alter(&$form, &$form_state) {
   if (empty($form['#node_type']->type)) {
@@ -298,13 +298,15 @@ function comment_driven_get_properties($node_type) {
   return $driven_props;
 }
 
-function comment_driven_get_property_paths($node_type) {
+function comment_driven_get_property_paths($node_type, $filtered = TRUE) {
   $property_paths = variable_get('comment_driven:properties_' . $node_type, array());
   
-  // modules might get disabled
-  // and its settings will remain until the content type be re-saved
-  $available_props = comment_driven_available_properties($node_type);
-  $property_paths = array_intersect($property_paths, array_keys($available_props));
+  if ($filtered) {
+    // modules might get disabled
+    // and its settings will remain until the content type be re-saved
+    $available_props = comment_driven_available_properties($node_type);
+    $property_paths = array_intersect($property_paths, array_keys($available_props));
+  }
   
   return $property_paths;
 }

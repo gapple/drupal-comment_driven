@@ -2,6 +2,85 @@
 // $Id$
 
 /**
+ * Implements hook_form_alter().
+ */
+function comment_driven_cck_form_alter(&$form, &$form_state, $form_id) {
+  // can't use hook_form_FORM_ID_alter,
+  // since we want our submit handler to be invoked
+  // after fieldgroup_field_overview_form_submit (which is added in form_alter time) 
+  if ($form_id != 'content_field_overview_form') return;
+
+  $form['#submit'][] = 'comment_driven_cck_field_overview_form_submit';
+}
+
+/**
+ * Auto-detect and fix changed property paths due to fields being moved into/out from/to a different group. 
+ */
+function comment_driven_cck_field_overview_form_submit($form, &$form_state) {
+  // this function is only intended to babysit site-builders a little more
+  // but restless site-builders will hit the cross-posting pitfalls anyway
+  // having following two forms opened at the same time
+  // - admin/content/node-type/[type]
+  // - admin/content/node-type/[type]/fields
+  // once the fields are moved between groups/no-group
+  // the content type edition form reflects an inaccurate list of available properties
+  // (and even refreshing it won't be enough in those wise browsers which leave checked checkboxes)
+  // BUT this is support enough to those site-builders just moving a field around
+  
+  $node_type = $form['#type_name'];
+  $field_names = $form['#fields'];
+  // clear fieldgroup static cache
+  fieldgroup_groups($node_type, FALSE, TRUE);
+  
+  // read property paths without limiting them to available properties
+  // (editing node_form structure is an exclusive feature of CCK)
+  $unfiltered_property_paths = comment_driven_get_property_paths($node_type, FALSE);
+  $old_property_paths = array();
+  foreach ($unfiltered_property_paths as $property_path) {
+    $path_parts = explode(':', $property_path);
+    // if it is a CCK field its old property path will be either:
+    // - field_name
+    // - group_name:field_name
+    $field_name = array_pop($path_parts);
+    if (strpos($field_name, 'field_') !== 0) {
+      // not a field_name
+      continue;
+    }
+    // group_name is not needed
+    //$group_name = empty($path_parts) ? '' : array_shift($path_parts);
+    
+    // remember that it might not be a field even when its name matches the pattern
+    $old_property_paths[$field_name] = $property_path;
+  }
+  
+  $updated = FALSE;
+  $available_cck_properties = comment_driven_cck_driven_properties($node_type);
+  foreach ($available_cck_properties as $property_path => $prop) {
+    $field_name = $prop['meta']['field_name'];
+    // if we can't find it might be moved (under a different group or no group at all)
+    if (isset($old_property_paths[$field_name]) && !in_array($property_path, $unfiltered_property_paths)) {
+      $old_property_path = $old_property_paths[$field_name];
+      // we found it under its old property path, lets update it
+      if (in_array($old_property_path, $unfiltered_property_paths)) {
+        // remove the old property path
+        $unfiltered_property_paths = array_diff($unfiltered_property_paths, array($old_property_path));
+        // add the new property path
+        $unfiltered_property_paths[] = $property_path;
+        
+        $updated = TRUE;
+        watchdog('comment_driven', t('Driven property path was moved from %old_path to %new_path'), array('%old_path' => $old_property_path, '%new_path' => $property_path), WATCHDOG_INFO);
+      }
+    }
+  }
+  if ($updated) {
+    // reset indexes (just in case someone expect them being sequential)
+    $unfiltered_property_paths = array_values($unfiltered_property_paths);
+    // update the unfiltered property paths
+    variable_set('comment_driven:properties_' . $node_type, $unfiltered_property_paths);
+  }
+}
+
+/**
  * Implements hook_driven_properties().
  */
 function comment_driven_cck_driven_properties($node_type) {
@@ -27,7 +106,7 @@ function comment_driven_cck_driven_properties($node_type) {
   // first lookup the groups to discriminate nested fields
   foreach ($groups as $group_name => $group) {
     foreach ($group['fields'] as $field_name => $field) {
-      $property_paths[$field_name] = $group_name;
+      $grouped_paths[$field_name] = $group_name;
     }
   }
 
@@ -96,7 +175,10 @@ function comment_driven_cck_diff_values($element, $form_values, $meta) {
   }
 
   // if values are not at this level pass through it
-  if (!isset($element['#default_value'])) {
+  // careful, isset is not enough, since it can be NULL (e.g. number)
+  // not using in_array, since it compares and matches zero with string
+  // @TODO: don't know other way to discriminate cck's number having NULL #default_value
+  if (!isset($element['#default_value']) && !isset($element['_weight'])) {
     if (!count(element_children($element))) {
       // bypass (it should be add_more or something else)
       return FALSE;

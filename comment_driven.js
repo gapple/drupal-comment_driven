@@ -22,11 +22,15 @@ Drupal.comment_driven.node_wrap = function() {
     $('#driven_node_container').prependTo('#comment-form');
   }
   
-  // bring every node_form element into the fieldset
-  // don't rely on class=node-form being set by a theme function
-  $('#comment-form > div:not(#comment_driven)').prependTo('#driven_node_container .fieldset-wrapper');
-  // make the fieldset visible
-  $('#driven_node_container').css('display', 'block');
+  var fieldset_wrapper_selector = Drupal.settings.comment_driven.fieldset_wrapper_selector;
+  if (fieldset_wrapper_selector != '') {
+    fieldset_wrapper_selector = '#driven_node_container ' + fieldset_wrapper_selector; 
+    // bring every node_form element into the fieldset
+    // don't rely on class=node-form being set by a theme function
+    $('#comment-form > div:not(#comment_driven)').prependTo(fieldset_wrapper_selector);
+    // make the fieldset visible
+    $('#driven_node_container').css('display', 'block');
+  }
 };
 
 // just once (not a behavior)

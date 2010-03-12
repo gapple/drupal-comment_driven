@@ -147,6 +147,7 @@ function comment_driven_cck_driven_properties($node_type) {
       'optionwidgets', 
       'filefield', 
       'date',
+      'content_taxonomy',
     );
     if (!in_array($field['module'], $supported_modules)) {
       $available_props[$group_path_prefix . $field_name]['type_settings'] += array(
@@ -178,7 +179,7 @@ function comment_driven_cck_diff_values($element, $form_values, $meta) {
   // careful, isset is not enough, since it can be NULL (e.g. number)
   // not using in_array, since it compares and matches zero with string
   // @TODO: don't know other way to discriminate cck's number having NULL #default_value
-  if (!isset($element['#default_value']) && !isset($element['_weight'])) {
+  if (!isset($element['#default_value']) && (!isset($element['#type']) || ($element['#type'] != 'number' || !isset($element['_error_element'])))) {
     if (!count(element_children($element))) {
       // bypass (it should be add_more or something else)
       return FALSE;

@@ -41,6 +41,7 @@ function comment_driven_init() {
     'comment_driven' => array(
       // global setting (not per content type)
       'node_form_bellow' => variable_get('comment_driven:node_form_bellow', 0),
+      'fieldset_wrapper_selector' => variable_get('comment_driven:fieldset_wrapper_selector', '.fieldset-wrapper'),
     ),
   );
   drupal_add_js($js_setting, 'setting');
@@ -67,7 +68,7 @@ function comment_driven_perm() {
  */
 function comment_driven_menu() {
   $menu['admin/settings/comment_driven'] = array(
-    'title' => 'Comment driven global settings',
+    'title' => 'Comment driven',
     'description' => 'Global settings for comment driven',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('comment_driven_settings'),
@@ -383,6 +384,10 @@ function comment_driven_form_alter(&$form, &$form_state, $form_id) {
     $node_type = $type->type;
     $type_name = $type->name;
 
+    if (!variable_get('comment_driven:enabled_' . $node_type, 0)) {
+      // driven properties are disabled
+      return; // step out of the way
+    }
     if (!(user_access('drive ' . $node_type . ' properties through comments') || user_access('drive node properties through comments (EVERY content type!)'))) {
       // has no permission
       return; // step out of the way
@@ -496,16 +501,36 @@ function comment_driven_form_alter(&$form, &$form_state, $form_id) {
     $form['preview']['#type'] = 'submit'; // no longer a button
     $form['preview']['#submit'] = array('comment_driven_build_preview');
     
+    // these properties doesn't mean anything to an element
+    $form_level_keys = array(
+      'form_id', 
+      'form_build_id', 
+      'form_token',
+    );
+    // @per-module-discrimination:
+    // defer those elements which shouldn't be disguised
+    // for other module to able to recognize them
+    // WARNING: this won't avoid name clashes,
+    $contrib_keys = array(
+      'attachments', // @per-module-discrimination: comment_upload
+    );
     // prepare to merge node_form into comment_form
     // avoid name clashes
     // (e.g. 'comment' is the body in comment_form and the comment_settings in node_form)
-    // (OTOH many of these properties doesn't mean anything to element, e.g. #validate)
-    $keys = array_diff(element_children($form), array('form_id', 'form_build_id', 'form_token'));
+    $keys = array_diff(element_children($form), array_merge($form_level_keys, $contrib_keys));
     foreach ($keys as $key) {
       $form['comment_driven'][$key] = $form[$key];
       unset($form[$key]);
     }
     $form['comment_driven'] = _comment_driven_disguise($form['comment_driven']);
+    // @per-module-discrimination:
+    // now move deferred elements without disguising them
+    // WARNING: this won't avoid name clashes,
+    // just group them under the same element as the rest comment_form
+    foreach ($contrib_keys as $key) {
+      $form['comment_driven'][$key] = $form[$key];
+      unset($form[$key]);
+    }
     // disguise supports only element_children
     // undisguise does support non-children as well
     // manually disguise non-children
@@ -788,6 +813,7 @@ function comment_driven_validate($form, &$form_state) {
     // we'll pick them up and manually handle them on our submit handler
     // honoring their order and also picking up resulting cid with accuracy
     // (nevertheless, the main reason for this lazzy submit handler is to avoid the recursion explained above)
+    // (to test with extra submit handlers, a 3rd party module would be needed, e.g. flatcomments-6.x-2.0 [#737982])
     $form_state['submit_handlers'] = array('comment_driven_submit');
     // OTOH comment_driven_build_preview will drop every submit handler
     // as comment module used to do with its preview, but in a different fashion

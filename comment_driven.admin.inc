@@ -5,8 +5,17 @@
  * Global settings form.
  */
 function comment_driven_settings(&$form_state) {
+  drupal_set_title(t('Comment driven global settings'));
+  
+  $form['workflow'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Workflow'),
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
+  );
+  
   $varname = 'comment_driven:enforce_new_revision';
-  $form['comment_driven']['workflow'][$varname] = array(
+  $form['workflow'][$varname] = array(
     '#type' => 'checkbox',
     '#title' => t('Enforce new revision.'),
     '#description' => t('Even when the content type may have revisions disabled this option will enforce a new revision whenever a driven property change is detected.')
@@ -14,12 +23,40 @@ function comment_driven_settings(&$form_state) {
     '#default_value' => variable_get($varname, 1),
   );
   
+  $form['theme_support'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Theme support'),
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
+  );
+  
+  $varname = 'comment_driven:fieldset_wrapper_selector';
+  $form['theme_support'][$varname] = array(
+    '#type' => 'radios',
+    '#title' => t('Driven fieldset'),
+    '#description' => t('Disabling the fieldset doesn\'t support to position the driven properties above the comment form.'),
+    '#default_value' => variable_get($varname, '.fieldset-wrapper'),
+    '#options' => array(
+      '.fieldset-wrapper' => t('Default'),
+      '.fieldset-content' => t('Open Atrium'),
+      // I don't like this idea, but it was requested [#722792]
+      '' => t('Disabled'),
+    ),
+  );
+  
   $varname = 'comment_driven:node_form_bellow';
-  $form['comment_driven']['node_form'][$varname] = array(
+  $form['theme_support']['node_form'][$varname] = array(
     '#type' => 'checkbox',
     '#title' => t('Display driven properties bellow comment form.'),
     '#description' => t('Allows to control whether the driven properties appear above or bellow the comment form.'),
     '#default_value' => variable_get($varname, 0),
+  );
+  
+  $form['render'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Render'),
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
   );
   
   // lets babysit restless sitebuilders
@@ -29,7 +66,7 @@ function comment_driven_settings(&$form_state) {
   // if the module knows it should detail it in the log
   // otherwise, be as accurate as possible
   $varname = 'comment_driven:warn_prop_or_val_gone';
-  $form['comment_driven']['render'][$varname] = array(
+  $form['render'][$varname] = array(
     '#type' => 'checkbox',
     '#title' => t('Warn live render gone properties/values.'),
 // @TODO: advanced_help

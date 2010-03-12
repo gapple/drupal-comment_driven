@@ -528,7 +528,11 @@ function comment_driven_form_alter(&$form, &$form_state, $form_id) {
     // WARNING: this won't avoid name clashes,
     // just group them under the same element as the rest comment_form
     foreach ($contrib_keys as $key) {
-      $form['comment_driven'][$key] = $form[$key];
+      // contrib modules might be enabled but not taking action for this content type
+      if (isset($form[$key])) {
+        $form['comment_driven'][$key] = $form[$key];
+      }
+      // if it was NULL won't hurt clearing it
       unset($form[$key]);
     }
     // disguise supports only element_children

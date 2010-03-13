@@ -112,7 +112,7 @@ function comment_driven_form_node_type_form_alter(&$form, &$form_state) {
     '#collapsed' => TRUE,
     //'#weight' => 1,
   );
-  
+
   $varname = 'comment_driven:enabled';
   $form['comment_driven'][$varname] = array(
     '#type' => 'checkbox',
@@ -120,6 +120,13 @@ function comment_driven_form_node_type_form_alter(&$form, &$form_state) {
     '#description' => t('Whether this content type will be driven through comments.'),
     '#default_value' => variable_get($varname . '_' . $node_type, 0),
   );
+  // incompatible with comment_upload [#741544-8]
+  $active_comment_upload = variable_get('comment_upload_' . $node_type, 0);
+  if ($active_comment_upload) {
+    $form['comment_driven'][$varname]['#default_value'] = 0;
+    $form['comment_driven'][$varname]['#disabled'] = TRUE;
+    $form['comment_driven'][$varname]['#description'] .= '<br/>' . t('Regretfully driven properties are !incompatible, you can disable "attachments on comments" to enable driven properties for this content type.', array('!incompatible' => l(t('incompatible with comment_upload'), 'http://drupal.org/node/741544#comment-2715990')));
+  }
   
   $varname = 'comment_driven:exclusivity';
   $form['comment_driven'][$varname] = array(
@@ -384,7 +391,9 @@ function comment_driven_form_alter(&$form, &$form_state, $form_id) {
     $node_type = $type->type;
     $type_name = $type->name;
 
-    if (!variable_get('comment_driven:enabled_' . $node_type, 0)) {
+    // incompatible with comment_upload [#741544-8]
+    $active_comment_upload = variable_get('comment_upload_' . $node_type, 0);
+    if (!variable_get('comment_driven:enabled_' . $node_type, 0) || $active_comment_upload) {
       // driven properties are disabled
       return; // step out of the way
     }
@@ -507,34 +516,15 @@ function comment_driven_form_alter(&$form, &$form_state, $form_id) {
       'form_build_id', 
       'form_token',
     );
-    // @per-module-discrimination:
-    // defer those elements which shouldn't be disguised
-    // for other module to able to recognize them
-    // WARNING: this won't avoid name clashes,
-    $contrib_keys = array(
-      'attachments', // @per-module-discrimination: comment_upload
-    );
     // prepare to merge node_form into comment_form
     // avoid name clashes
     // (e.g. 'comment' is the body in comment_form and the comment_settings in node_form)
-    $keys = array_diff(element_children($form), array_merge($form_level_keys, $contrib_keys));
+    $keys = array_diff(element_children($form), $form_level_keys);
     foreach ($keys as $key) {
       $form['comment_driven'][$key] = $form[$key];
       unset($form[$key]);
     }
     $form['comment_driven'] = _comment_driven_disguise($form['comment_driven']);
-    // @per-module-discrimination:
-    // now move deferred elements without disguising them
-    // WARNING: this won't avoid name clashes,
-    // just group them under the same element as the rest comment_form
-    foreach ($contrib_keys as $key) {
-      // contrib modules might be enabled but not taking action for this content type
-      if (isset($form[$key])) {
-        $form['comment_driven'][$key] = $form[$key];
-      }
-      // if it was NULL won't hurt clearing it
-      unset($form[$key]);
-    }
     // disguise supports only element_children
     // undisguise does support non-children as well
     // manually disguise non-children

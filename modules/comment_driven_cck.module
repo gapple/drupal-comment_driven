@@ -29,6 +29,9 @@ function comment_driven_cck_field_overview_form_submit($form, &$form_state) {
   
   $node_type = $form['#type_name'];
   $field_names = $form['#fields'];
+  // if fieldgroup module is not enabled we still process the overview form
+  // because it might got recently disabled
+  // which would be the same as taking every property out of its group
   if (module_exists('fieldgroup')) {
     // clear fieldgroup static cache
     fieldgroup_groups($node_type, FALSE, TRUE);

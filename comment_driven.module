@@ -41,7 +41,7 @@ function comment_driven_init() {
     'comment_driven' => array(
       // global setting (not per content type)
       'node_form_bellow' => variable_get('comment_driven:node_form_bellow', 0),
-      'fieldset_wrapper_selector' => variable_get('comment_driven:fieldset_wrapper_selector', '.fieldset-wrapper'),
+      'theme_support' => variable_get('comment_driven:theme_support', 'default'),
     ),
   );
   drupal_add_js($js_setting, 'setting');

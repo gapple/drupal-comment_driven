@@ -30,17 +30,17 @@ function comment_driven_settings(&$form_state) {
     '#collapsed' => FALSE,
   );
   
-  $varname = 'comment_driven:fieldset_wrapper_selector';
+  $varname = 'comment_driven:theme_support';
   $form['theme_support'][$varname] = array(
     '#type' => 'radios',
     '#title' => t('Driven fieldset'),
     '#description' => t('Disabling the fieldset doesn\'t support to position the driven properties above the comment form.'),
-    '#default_value' => variable_get($varname, '.fieldset-wrapper'),
+    '#default_value' => variable_get($varname, 'default'),
     '#options' => array(
-      '.fieldset-wrapper' => t('Default'),
-      '.fieldset-content' => t('Open Atrium'),
+      'default' => t('Default'),
+      'atrium' => t('Open Atrium themes: Tao and its sub-themes: Rubik, Ginkgo, etc'),
       // I don't like this idea, but it was requested [#722792]
-      '' => t('Disabled'),
+      'disabled' => t('Disabled'),
     ),
   );
   

@@ -22,14 +22,27 @@ Drupal.comment_driven.node_wrap = function() {
     $('#driven_node_container').prependTo('#comment-form');
   }
   
-  var fieldset_wrapper_selector = Drupal.settings.comment_driven.fieldset_wrapper_selector;
-  if (fieldset_wrapper_selector != '') {
-    fieldset_wrapper_selector = '#driven_node_container ' + fieldset_wrapper_selector; 
-    // bring every node_form element into the fieldset
-    // don't rely on class=node-form being set by a theme function
-    $('#comment-form > div:not(#comment_driven)').prependTo(fieldset_wrapper_selector);
-    // make the fieldset visible
-    $('#driven_node_container').css('display', 'block');
+  // support Open Atrium [#740310]
+  // Open Atrium excludes collapse.js and also uses tao/templates/object.tpl.php
+  // which wraps the fielset content into a .fieldset-content instead of a .fieldset-wrapper
+  var theme_support = Drupal.settings.comment_driven.theme_support;
+  var fieldset_wrapper_selector = '#driven_node_container .fieldset-wrapper';
+  switch (theme_support) {
+    case 'disabled':
+      // take no action
+      break;
+    case 'atrium': // Open Atrium themes: Tao and its sub-themes: Rubik, Ginkgo
+      fieldset_wrapper_selector = '#driven_node_container .fieldset-content';
+      // object.tpl.php doesn't print anything when empty($content)
+      $('#driven_node_container').append('<div class="fieldset-content clear-block"></div>');
+      // no break;
+    default:
+      // bring every node_form element into the fieldset
+      // don't rely on class=node-form being set by a theme function
+      $('#comment-form > div:not(#comment_driven, #driven_node_container)').prependTo(fieldset_wrapper_selector);
+      // make the fieldset visible
+      $('#driven_node_container').css('display', 'block');
+      break;
   }
 };
 

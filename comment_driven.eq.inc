@@ -176,6 +176,13 @@ function _comment_driven_equal_non_array($default, &$value) {
     $value = (int)$value;
   }
   elseif (is_string($default) && (is_bool($value) || is_int($value))) {
+    // not considering is_float($value) because
+    // in some cases driven properties would need to take care
+    // of converting decimal values to string to match
+    // decimal zeros on the extreme right (e.g. CCK's decimal)
+    // which would be very tricky for elements nested into arrays
+    // therefore, this function doesn't support float value
+    // which would need to reach this point already converted to string
     $value = (string)$value;
   }
   

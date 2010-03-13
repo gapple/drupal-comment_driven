@@ -29,8 +29,10 @@ function comment_driven_cck_field_overview_form_submit($form, &$form_state) {
   
   $node_type = $form['#type_name'];
   $field_names = $form['#fields'];
-  // clear fieldgroup static cache
-  fieldgroup_groups($node_type, FALSE, TRUE);
+  if (module_exists('fieldgroup')) {
+    // clear fieldgroup static cache
+    fieldgroup_groups($node_type, FALSE, TRUE);
+  }
   
   // read property paths without limiting them to available properties
   // (editing node_form structure is an exclusive feature of CCK)
@@ -286,6 +288,27 @@ function comment_driven_cck_diff_values($element, $form_values, $meta) {
   if ($separated_item) {
     $default = array($default);
     $value = array($value);
+  }
+  
+  // @per-module-discrimination: support number (decimal)
+  // otherwise "string vs double" comparison won't work
+  // having non-significant zeros [#461536-2]
+  // then normilizing to $value to meet $default_value format
+  // would be converting it to string and pad decimal places
+  // with zeros as much as scale
+  if ($field['type'] == 'number_decimal') {
+    foreach ($value as $delta => $item) {
+      $val = &$value[$delta]['value'];
+      // same treatment as proposed at [#461536-7]
+      // Note that it should be a double value (or a string if CCK patch was applied)
+      // and its decimal separator will be a dot regarless of the field['decimal'] separator
+      list($units, $fraction) = explode('.', $val);
+      if (is_null($fraction)) {
+        $fraction = '';
+      }
+      $fraction = str_pad($fraction, $field['scale'], '0');
+      $val = $units . '.' . $fraction;
+    }
   }
   
   // filter out empty values

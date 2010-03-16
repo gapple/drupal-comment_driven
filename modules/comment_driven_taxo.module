@@ -41,7 +41,7 @@ function comment_driven_taxo_driven_properties($node_type) {
  * Implements hook_diff_values().
  */
 function comment_driven_taxo_diff_values($element, $form_values, $meta) {
-  extract($meta); // $realm, $property_path, $vid
+  extract($meta); // $realm, $property_path, $vid [, $voc_override]
 
   $voc = taxonomy_vocabulary_load($vid);
   if (!$voc) {
@@ -49,6 +49,12 @@ function comment_driven_taxo_diff_values($element, $form_values, $meta) {
     // can't guess, can't normalize $value
     // can't afford being asked for diff_render
     return FALSE; // nothing to declare (i.e. return no diff_values)
+  }
+  
+  // @per-module-discrimination: support taxonomy-related content_taxonomy widgets
+  // (this also supports any custom delegation)
+  if (isset($voc_override)) {
+    $voc = (object)array_merge((array)$voc, $voc_override);
   }
   
   // beneath taxonomy:vid or taxonomy:tags:vid nothing is handled by core
@@ -142,10 +148,15 @@ function comment_driven_taxo_diff_values($element, $form_values, $meta) {
       //
       // therefore it will be always a non-associative array in #default_value
 
-      // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
-      if ($voc->multiple != $element['#config']['save_lineage']) comment_driven_assertion_failed('$voc->multiple != HS save_lineage (vid: ' . $voc->vid . ')');
+      // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage
+      $save_lineage = $element['#config']['save_lineage'];
+      $drop_box = $element['#config']['dropbox']['status'];
+      if ($voc->multiple != ($save_lineage | $drop_box)) comment_driven_assertion_failed('$voc->multiple != (save_lineage|drop_box) (vid: ' . $voc->vid . ')');
       
-      // lineage <=> multiple (guaranteed by HS on vocabulary submit)
+      // guaranteed by HS
+      // lineage => multiple 
+      // dropbox => multiple 
+      // multiple <=> lineage|dropbox
       if ($voc->multiple) {
         // handle option "none"
         // $value is set to NULL by HS
@@ -186,7 +197,7 @@ function comment_driven_taxo_diff_values($element, $form_values, $meta) {
  * Implements hook_diff_render().
  */
 function comment_driven_taxo_diff_render($old, $new, $meta) {
-  extract($meta); // $realm, $property_path, $vid
+  extract($meta); // $realm, $property_path, $vid [, $voc_override]
     
   $voc = taxonomy_vocabulary_load($vid);
   if (!$voc) {
@@ -194,6 +205,11 @@ function comment_driven_taxo_diff_render($old, $new, $meta) {
     // can't say, but if we got here was because diff_values delivered something
     // (either deliberately or for real in a time the vocabulary existed)
     return array('?', '?');
+  }
+  // @per-module-discrimination: support taxonomy-related content_taxonomy widgets
+  // (this also supports any custom delegation)
+  if (isset($voc_override)) {
+    $voc = (object)array_merge((array)$voc, $voc_override);
   }
   //$hierarchy = $voc->hierarchy;
   $multiple = $voc->multiple;

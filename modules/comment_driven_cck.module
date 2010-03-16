@@ -152,6 +152,9 @@ function comment_driven_cck_driven_properties($node_type) {
       'optionwidgets', 
       'filefield', 
       'date',
+      // this would be enough to support vanilla content_taxonomy
+      // which uses CCK-related widgets (content_taxonomy_optionwidgets & content_taxonomy_autocomplete)
+      // but it isn't enough to support its taxonomy-related widgets (e.g. hs_content_taxonomy)
       'content_taxonomy',
     );
     if (!in_array($field['module'], $supported_modules)) {
@@ -162,6 +165,65 @@ function comment_driven_cck_driven_properties($node_type) {
         '#weight' => 10, // sink
       );
     }
+    
+    // @per-module-discrimination: support advanced content_taxonomy widgets
+    if ($field['module'] == 'content_taxonomy') {
+      // this is a case where the #title will be beneath (at $element['tids'])
+      $available_props[$group_path_prefix . $field_name]['label'] = $field['widget']['label'];
+      
+      // known to be handled by cck realm:
+      // (i.e. not delegated to taxo realm)
+      // - content_taxonomy_options
+      // - content_taxonomy_autocomplete
+      // known to be delegated to taxo realm:
+      $taxo_widgets = array(
+        'hs_content_taxonomy',
+      );
+      // not yet supported by taxo realm:
+      // - activeselect
+      // - multiselect
+      // - content_taxonomy_tree (depends on taxonomy_manager)
+      // known to be free tagging
+      $free_tagging_widgets = array();
+      
+      $widget_module = $field['widget']['module'];
+      if (in_array($widget_module, $taxo_widgets)) {
+        // taxonomy-related widget are gonna be delegated to comment_driven_taxo
+        //$hierarchy = ; // @TODO: how to know whether it should be flagged or not
+        $multiple = $field['multiple'];
+        $tags = in_array($widget_module, $free_tagging_widgets);
+        
+        // @per-module-discrimination: support hs_content_taxonomy
+        if ($widget_module == 'hs_content_taxonomy') {
+          // has its own field configuration
+          module_load_include('inc', 'hierarchical_select', 'modules/' . $widget_module . '.admin');
+          $hs_config_form = hs_content_taxonomy_config_form(array(), $node_type, $field_name);
+          $save_lineage = $hs_config_form['hierarchical_select_config']['save_lineage']['#default_value'];
+          $drop_box = $hs_config_form['hierarchical_select_config']['dropbox']['status']['#default_value'];
+          $multiple = ($save_lineage | $drop_box); 
+        }
+        
+        // additional meta to indicated target vid and voc_override
+        $taxo_meta = array(
+          'vid' => $field['vid'],
+          'voc_override' => array(
+            //'hierarchy' => $hierarchy, // @TODO: how to know whether it should be flagged or not
+            'multiple' => $multiple,
+            'tags' => $tags,
+          ),
+        );
+        $available_props[$group_path_prefix . $field_name]['meta']['taxo_meta'] = $taxo_meta;
+        
+        // therefore, it will require both realms: cck & taxo
+        if (!module_exists('comment_driven_taxo')) {
+          $available_props[$group_path_prefix . $field_name]['type_settings'] += array(
+            '#description' => t('This property requires %module to be enabled, since it is both CCK & Taxonomy related.', array('%module' => 'comment_driven_taxo')),
+            '#disabled' => TRUE,
+            '#value' => FALSE,
+          );
+        }
+      }
+    }
   }
   
   return $available_props;
@@ -171,7 +233,7 @@ function comment_driven_cck_driven_properties($node_type) {
  * Implements hook_diff_values().
  */
 function comment_driven_cck_diff_values($element, $form_values, $meta) {
-  extract($meta); // $realm, $property_path, $node_type, $field_name
+  extract($meta); // $realm, $property_path, $node_type, $field_name [, $taxo_meta]
 
   $field = comment_driven_cck_get_field($field_name, $node_type);
   if (!$field) {
@@ -237,8 +299,8 @@ function comment_driven_cck_diff_values($element, $form_values, $meta) {
   // to match #default_value format instead of $form_state['values']
   $value = comment_driven_form_get_value($element['#parents'], $form_values);
 
+  // @per-module-discrimination
   switch ($field['type']) {
-    // @per-module-discrimination: support filefield
     case 'filefield':
       // remove from $value keys which are not present in $default
       $keys = array_diff(array_keys($value), array_keys($default));
@@ -269,6 +331,14 @@ function comment_driven_cck_diff_values($element, $form_values, $meta) {
       $keys = array('timezone_db', 'date_type');
       foreach ($keys as $key) {
         $value[$key] = $default[$key];
+      }
+      break;
+      
+    // @per-module-discrimination: support taxonomy-related content_taxonomy widgets
+    case 'content_taxonomy':
+      if (!empty($taxo_meta)) {
+        // delegate to comment_driven_taxo, which knows widget's tweaks
+        return comment_driven_taxo_diff_values($element, $form_values, $meta + $taxo_meta);
       }
       break;
   }
@@ -368,7 +438,7 @@ function comment_driven_cck_diff_values($element, $form_values, $meta) {
  * Implements hook_diff_render().
  */
 function comment_driven_cck_diff_render($old, $new, $meta) {
-  extract($meta); // $realm, $property_path, $node_type, $field_name
+  extract($meta); // $realm, $property_path, $node_type, $field_name [, $taxo_meta]
 
   $field = comment_driven_cck_get_field($field_name, $node_type);
   if (!$field) {
@@ -376,6 +446,17 @@ function comment_driven_cck_diff_render($old, $new, $meta) {
     // (either deliberately or for real in a time the vocabulary existed)
     return array('?', '?');
   }
+  
+  // @per-module-discrimination: support taxonomy-related content_taxonomy widgets
+  if ($field['module'] == 'content_taxonomy' && !empty($taxo_meta)) {
+    // delegate to comment_driven_taxo, which knows widget's tweaks
+    
+    // pass through tids arrays,
+    // since cck_diff_value took care of the wrapper
+    // but comment_driven_taxo won't be aware of it 
+    return comment_driven_taxo_diff_render($old['tids'], $new['tids'], $meta + $taxo_meta);
+  }
+  
   
   $node = (object)array(
     'type' => $node_type, 

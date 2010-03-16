@@ -120,9 +120,16 @@ function comment_driven_form_node_type_form_alter(&$form, &$form_state) {
     '#description' => t('Whether this content type will be driven through comments.'),
     '#default_value' => variable_get($varname . '_' . $node_type, 0),
   );
-  // incompatibility with comment_upload [#741544-8]
-  // can't allow driven properties, "attachments on comments" and preview at the same time
-  $form['#submit'][] = 'comment_driven_node_type_submit';
+  // @per-module-discrimination: incompatible with comment_upload [#741544-8]
+  if (comment_driven_is_attachments_on_comments($node_type)) {
+    // would be very annoying to have to make the submission twice
+    //$form['comment_driven'][$varname]['#default_value'] = 0;
+    //$form['comment_driven'][$varname]['#disabled'] = TRUE;
+    $form['comment_driven'][$varname]['#description'] .= 
+      '<br/>' . t('Regretfully driven properties are <a href="!url">incompatible with comment_upload</a>.', array('!url' => 'http://drupal.org/node/741544#comment-2715990'))
+      . '<br/>' . t('You can disable "attachments on comments" to enable driven properties for this content type.')
+      . '<br/>' . t('Otherwise you can try <a href="!url">a different approach</a> to achieve attachments on comments.', array('!url' => 'http://drupal.org/node/739690#comment-2727854'));
+  }
   
   $varname = 'comment_driven:exclusivity';
   $form['comment_driven'][$varname] = array(
@@ -253,17 +260,6 @@ function comment_driven_form_node_type_form_alter(&$form, &$form_state) {
   );
 }
 
-function comment_driven_node_type_submit($form, &$form_state) {
-  $values = $form_state['values'];
-  // incompatibility with comment_upload [#741544-8]
-  // can't allow driven properties, "attachments on comments" and preview at the same time
-  if ($values['comment_driven:enabled'] && $values['comment_upload'] && $values['comment_preview'] !== COMMENT_DRIVEN__PREVIEW_DISABLED) {
-    drupal_set_message(t('Note that "comment preview" won\'t be available due to an !issue.', array('!issue' => l(t('incompatibility issue'), 'http://drupal.org/node/741544#comment-2715990')))
-      . ' ' . t('If you prefer having it, you will need to disable "driven properties" or "attachments on comments", since having them both is what prevents "comment preview" from working.'),
-      'warning');
-  }
-}
-
 /**
  * Implementation of hook_node_type().
  */
@@ -284,6 +280,11 @@ function comment_driven_node_type($op, $info) {
       }
       break;
   }
+}
+
+// @per-module-discrimination: incompatible with comment_upload [#741544-8]
+function comment_driven_is_attachments_on_comments($node_type) {
+  return (module_exists('comment_upload') && variable_get('comment_upload_' . $node_type, 0));
 }
 
 function comment_driven_is_live_render($node_type) {
@@ -398,10 +399,12 @@ function comment_driven_form_alter(&$form, &$form_state, $form_id) {
     $node_type = $type->type;
     $type_name = $type->name;
 
-    // incompatible with comment_upload [#741544-8]
-    $active_comment_upload = variable_get('comment_upload_' . $node_type, 0);
-    if (!variable_get('comment_driven:enabled_' . $node_type, 0) || $active_comment_upload) {
+    if (!variable_get('comment_driven:enabled_' . $node_type, 0)) {
       // driven properties are disabled
+      return; // step out of the way
+    }
+    if (comment_driven_is_attachments_on_comments($node_type)) {
+      // @per-module-discrimination: incompatible with comment_upload [#741544-8]
       return; // step out of the way
     }
     if (!(user_access('drive ' . $node_type . ' properties through comments') || user_access('drive node properties through comments (EVERY content type!)'))) {
@@ -455,9 +458,6 @@ function comment_driven_form_alter(&$form, &$form_state, $form_id) {
       
       // don't unset $form_state['node'] for node_form processing (don't know if it will be needed)
       $ned_form_state = $form_state; // needed to preserve values (e.g. taxonomy)
-      // currently preview isn't supported if comment_upload is providing "attachments on comments" [#741544-8]
-      // but (in the future) other modules might receive "exclude from disguise" treatment
-      $ned_form_state['values'] = _comment_driven_extract_node_state_values($ned_form_state['values']);
       
       // restore comment's previewed values
       $previewed = $form_state['comment_driven:preview']['comment'];
@@ -517,15 +517,8 @@ function comment_driven_form_alter(&$form, &$form_state, $form_id) {
     // since it relies in comment_form not being cached 
     // instead we'll follow node_form approach
     $form['submit']['#submit'] = $form['#submit'];
-    // incompatibility with comment_upload [#741544-8]
-    // can't allow "driven properties", "attachments on comments" and "comment preview" at the same time
-    if (variable_get('comment_upload_' . $node_type, 0)) {
-      unset($form['preview']);
-    }
-    else {
-      $form['preview']['#type'] = 'submit'; // no longer a button
-      $form['preview']['#submit'] = array('comment_driven_build_preview');
-    }
+    $form['preview']['#type'] = 'submit'; // no longer a button
+    $form['preview']['#submit'] = array('comment_driven_build_preview');
     
     // these properties doesn't mean anything to an element
     $form_level_keys = array(
@@ -536,7 +529,7 @@ function comment_driven_form_alter(&$form, &$form_state, $form_id) {
     // prepare to merge node_form into comment_form
     // avoid name clashes
     // (e.g. 'comment' is the body in comment_form and the comment_settings in node_form)
-    $keys = array_diff(element_children($form), array_merge($form_level_keys, _comment_driven_disguise_exceptions()));
+    $keys = array_diff(element_children($form), $form_level_keys);
     foreach ($keys as $key) {
       $form['comment_driven'][$key] = $form[$key];
       unset($form[$key]);
@@ -647,15 +640,6 @@ function _comment_driven_prop_in_depth(&$element, $key, $value) {
   }
 }
 
-// @per-module-discrimination
-function _comment_driven_disguise_exceptions() {
-  // this implies potential name clashes between node_form and comment_form values
-  // in fact, comment_upload clashes with core's upload on preview [#741544-8]
-  return array(
-    'attachments', // @per-module-discrimination: comment_upload
-  );
-}
-
 function _comment_driven_disguise($element) {
   // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
   if (!is_array($element)) comment_driven_assertion_failed('something nasty is happening somewhere: !is_array($element)');
@@ -722,10 +706,10 @@ function _comment_driven_restore_ids(&$element) {
 }
 
 // only first level COMMENT_DRIVEN__DISGUISE_PREFIX prefixed values are desired
-function _comment_driven_extract_comment_state_values($state_values) {
+function _comment_driven_extract_state_values($state_values) {
   $values = array();
   foreach (array_keys($state_values) as $key) {
-    if (strpos($key, COMMENT_DRIVEN__DISGUISE_PREFIX) === 0 || in_array($key, _comment_driven_disguise_exceptions())) { 
+    if (strpos($key, COMMENT_DRIVEN__DISGUISE_PREFIX) === 0) { 
       $values[$key] = $state_values[$key];
     }
   }
@@ -733,19 +717,11 @@ function _comment_driven_extract_comment_state_values($state_values) {
   return $values;
 }
 
-function _comment_driven_extract_node_state_values($state_values) {
-  // received by val
-  foreach (_comment_driven_disguise_exceptions() as $key) {
-    unset($state_values[$key]);
-  }
-  return $state_values;
-}
-
 function comment_driven_build_preview($form, &$form_state) {
   unset($form_state['submit_handlers']);
   $comment_form = _comment_driven_undisguise($form);
   $comment_form_state = $form_state; // copied
-  $comment_form_state['values'] = _comment_driven_extract_comment_state_values($form_state['values']);
+  $comment_form_state['values'] = _comment_driven_extract_state_values($form_state['values']);
   
   $comment_form = comment_form_add_preview($comment_form, $comment_form_state);
   // previews the comment
@@ -850,7 +826,7 @@ function comment_driven_validate($form, &$form_state) {
   }
   $comment_form = _comment_driven_undisguise($form['comment_driven']);
   $comment_form_state = $form_state; // copied
-  $comment_form_state['values'] = _comment_driven_extract_comment_state_values($form_state['values']);
+  $comment_form_state['values'] = _comment_driven_extract_state_values($form_state['values']);
   
   $validate_handlers = $comment_form['#validate'];
   if (!empty($validate_handlers)) {
@@ -871,7 +847,7 @@ function comment_driven_submit($form, &$form_state) {
   
   $comment_form = _comment_driven_undisguise($form['comment_driven']);
   $comment_form_state = $form_state; // copied
-  $comment_form_state['values'] = _comment_driven_extract_comment_state_values($form_state['values']);
+  $comment_form_state['values'] = _comment_driven_extract_state_values($form_state['values']);
   
   $submit_handlers = $comment_form['#submit'];
   // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
@@ -923,9 +899,6 @@ function comment_driven_submit($form, &$form_state) {
     db_query($query, $cid, $old_vid, $new_vid, serialize($changes), serialize($diff_render), time());
     $did = db_last_insert_id('comment_driven_log', 'did');
     
-    // revome values of elements with "exclude from disguise" treatment
-    // (comment was already submitted, so it won't mind dropping them without restoring them back)
-    $form_state['values'] = _comment_driven_extract_node_state_values($form_state['values']);
     // only save if some value differs from its #default_value
     // otherwise it is just a comment
     node_form_submit($form, $form_state);

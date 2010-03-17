@@ -51,11 +51,19 @@ function comment_driven_access_cleanup(&$ned_form, $tree) {
       return; // it doesn't requires cleanup
     }
   }
-  
   // didn't find any accessible child
-  // therefore it does requires cleanup
-  // even if it is the top level (the whole form itself)
-  $ned_form['#access'] = FALSE;
+  
+  $is_top_level = empty($tree['#path']);
+  $has_children = !empty($children_keys);
+  
+  if ($is_top_level || $has_children) {
+    // not yet at property path level
+    //
+    // didn't find any accessible child
+    // therefore it does requires cleanup
+    // even if it is the top level (the whole form itself)
+    $ned_form['#access'] = FALSE;
+  }
 }
 
 function comment_driven_access_mask(&$ned_form, $tree) {
@@ -135,7 +143,10 @@ function comment_driven_build_property_paths_tree($property_paths) {
     $path_parts = explode(':', $property_path);
     $parent = &$tree;
     foreach ($path_parts as $key) {
-      $parent[$key] = array(
+      if (empty($parent[$key])) {
+        $parent[$key] = array();
+      }
+      $parent[$key] += array(
         '#path' => empty($parent['#path']) ? $key : ($parent['#path'] . ':' . $key),
       );
       $parent = &$parent[$key];

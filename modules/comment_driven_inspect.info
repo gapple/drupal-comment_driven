@@ -1,0 +1,8 @@
+; $Id$
+name = Comment driven inspect
+description = Provides troubleshooting tools.
+core = 6.x
+package = Driven
+
+dependencies[] = comment_driven
+

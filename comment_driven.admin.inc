@@ -98,6 +98,21 @@ function comment_driven_settings(&$form_state) {
     '#description' => t('Warn whenever live render displays inaccurate changes due to missing properties, values or modules responsible of their handling.'),
     '#default_value' => variable_get($varname, 1),
   );
+
+  $form['inspect'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Inspect'),
+    '#access' => module_exists('comment_driven_inspect'),
+    '#collapsible' => TRUE,
+  );
+  
+  $varname = 'comment_driven:inspect_links';
+  $form['inspect'][$varname] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Provide inspect links above comment\'s diff summary table.'),
+    '#description' => t('Only applicable to users with proper permission.'),
+    '#default_value' => variable_get($varname, 1),
+  );
   
   return system_settings_form($form);
 }

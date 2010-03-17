@@ -1,7 +1,8 @@
 ; $Id$
 name = Comment driven
-description = Allows comments to alter node's properties
+description = Allows comments to alter node's properties.
 core = 6.x
+package = Driven
 
 dependencies[] = comment
 

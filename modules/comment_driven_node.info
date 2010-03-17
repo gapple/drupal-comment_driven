@@ -1,7 +1,8 @@
 ; $Id$
-name = Comment driven (node)
-description = Allows comments to alter node's title/body/publishing options/etc
+name = Driven node
+description = Allows comments to alter node's title/body/publishing options/etc.
 core = 6.x
+package = Driven
 
 dependencies[] = comment_driven
 dependencies[] = node

@@ -50,7 +50,7 @@ function _comment_driven_elem_changes($driven_props, $element, $form_values, $as
     }
     
     // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
-    if (empty($element['#array_parents'])) comment_driven_assertion_failed('empty #array_parents for #type: ' . $element['#type']);
+    if (empty($element['#array_parents'])) comment_driven_assertion_failed('empty #array_parents for #type: ' . $element['#type'], $element, array('#id', '#title', '#parents'));
       
     // @TODO: review why #type=>radio has no #array_parents
     if (empty($element[$key]['#array_parents']) && in_array($element[$key]['#type'], array('radio', 'radios'))) {
@@ -80,8 +80,8 @@ function _comment_driven_elem_changes($driven_props, $element, $form_values, $as
     $meta = $prop['meta'];
     $diff_values = $function($element, $form_values, $meta);
     if ($diff_values) {
-      $label = empty($prop['label']) ? (empty($element['#title']) ? $ascendant_title : $element['#title']) : $prop['label'];
       list($old, $new) = $diff_values;
+      $label = empty($prop['label']) ? (empty($element['#title']) ? $ascendant_title : $element['#title']) : $prop['label'];
       
       // properties might no longer exist suddenly
       // a backup render has to be made instantly and kept
@@ -192,7 +192,7 @@ function _comment_driven_equal_non_array($default, &$value) {
   return ($default === $value || (empty($default) && empty($value)));
 }
 
-// note that symmetric_diff will consider discard keys for first level
+// note that symmetric_diff will discard keys for first level
 // first pick up values and then deeply compare them
 // and finally will return arrays with reseted keys
 // (avoid direct invokation, use comment_driven_symmetric_diff instead)
@@ -229,6 +229,18 @@ function _comment_driven_symmetric_diff($arr1, $arr2) {
   
   // reset keys
   return array(array_values($outgoing), array_values($incoming));
+}
+
+function comment_driven_has_default_value_key($element) {
+  // we only care if #default_value exists as a key of $element
+  // not whether it is empty/NULL or anything, it doesn't matters
+  
+  // careful, isset is not enough, since it can be NULL (e.g. number)
+  // in_array is not enough, since it compares and matches zero with string
+  // therefore, discard any zero key (or empty keys in general)
+  // (there are not keys being FALSE/NULL/'', but if so, they are intended to be removed as well)
+  $keys = array_filter(array_keys($element));
+  return in_array('#default_value', $keys);
 }
 
 // see form_set_value at form.inc

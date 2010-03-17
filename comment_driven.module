@@ -2,6 +2,11 @@
 // $Id$
 
 define('COMMENT_DRIVEN__DISGUISE_PREFIX', 'cdriven-');
+// these permission names should exists all the time
+// even having their modules disabled,
+// since they will be needed to check user_access on them
+define('COMMENT_DRIVEN_IMPORT__PERM', 'import property changes');
+define('COMMENT_DRIVEN_INSPECT__PERM', 'inspect property changes');
 
 module_load_include('inc', 'comment_driven', 'comment_driven.tokens');
 
@@ -11,6 +16,7 @@ define('COMMENT_DRIVEN__ASSERTIONS__DISPLAY', 1);
 define('COMMENT_DRIVEN__ASSERTIONS__LOG', 2);
 define('COMMENT_DRIVEN__ASSERTIONS__BOTH', 3); // (1 | 2)
 define('COMMENT_DRIVEN__ASSERTIONS', COMMENT_DRIVEN__ASSERTIONS__BOTH);
+define('COMMENT_DRIVEN__ASSERTIONS__DUMP_DATA', FALSE);
 
 /**
  * Implementation of hook_enable().
@@ -51,16 +57,27 @@ function comment_driven_init() {
  * Implementation of hook_perm().
  */
 function comment_driven_perm() {
-  $perms = array('drive node properties through comments (EVERY content type!)');  
+  $perms = array(comment_driven_get_perm_name('drive', 'ALL'));  
   
   foreach (node_get_types() as $type) {
     if ($type->module == 'node') {
-      $name = check_plain($type->type);
-      $perms[] = 'drive ' . $name . ' properties through comments';
+      $node_type = $type->type;
+      if (variable_get('comment_driven:enabled_' . $node_type, 0)) {
+        $perms[] = comment_driven_get_perm_name('drive', $node_type);
+      }
     }
   }
 
   return $perms;
+}
+
+// helper function
+function comment_driven_get_perm_name($action, $node_type) {
+  $perm = $action . ' ' . $node_type . ' properties through comments';
+  if ($node_type == 'ALL') {
+    $perm .= ' (for EVERY content type!)';
+  }
+  return $perm;
 }
 
 /**
@@ -328,6 +345,12 @@ function comment_driven_get_property_paths($node_type, $filtered = TRUE) {
 }
 
 function comment_driven_available_properties($node_type) {
+  // @TODO: static cache
+  // this is being invoked too many times in the same request
+  // but having static cache attempts against development
+  // since it might introduce caching issues
+  // once implemented, a review will be required
+  // to ensure proper refresh when needed
   $hook = 'driven_properties';
   if ($node_type) {
     $modules = module_implements($hook);
@@ -407,14 +430,14 @@ function comment_driven_form_alter(&$form, &$form_state, $form_id) {
       // @per-module-discrimination: incompatible with comment_upload [#741544-8]
       return; // step out of the way
     }
-    if (!(user_access('drive ' . $node_type . ' properties through comments') || user_access('drive node properties through comments (EVERY content type!)'))) {
+    if (!user_access(comment_driven_get_perm_name('drive', 'ALL')) && !(user_access(comment_driven_get_perm_name('drive', $node_type)))) {
       // has no permission
       return; // step out of the way
     }
     
-    $property_paths = comment_driven_get_property_paths($node_type);
+    $driven_props = comment_driven_get_properties($node_type);
     
-    if (empty($property_paths)) {
+    if (empty($driven_props)) {
       // no driven properties
       return; // step out of the way
     }
@@ -446,7 +469,7 @@ function comment_driven_form_alter(&$form, &$form_state, $form_id) {
       
       // display diff summary table
       // (couldn't be inside the body, since it was filtered in comment_form_add_preview)
-      //  (wasn't set if there were no changes to avoid rendering empty div/table/etc)
+      // (wasn't set if there were no changes to avoid rendering empty div/table/etc)
       if (!empty($form_state['comment_driven:preview']['diff_summary_table'])) {
         $form['comment_preview_above'] = array(
           '#value' => $form_state['comment_driven:preview']['diff_summary_table'],
@@ -490,18 +513,10 @@ function comment_driven_form_alter(&$form, &$form_state, $form_id) {
     $ned_form = drupal_retrieve_form($ned_form_id, $ned_form_state, $node);
     drupal_prepare_form($ned_form_id, $ned_form, $ned_form_state);
     
-    // default access to false for every element
-    _comment_driven_access_in_depth($ned_form, FALSE);
-    
-    // enable access to every element in the path of a property
-    foreach ($property_paths as $property_path) {
-      $property_path = explode(':', $property_path);
-      $parent = &$ned_form;
-      foreach ($property_path as $key) {
-        $parent[$key]['#access'] = TRUE;
-        $parent = &$parent[$key];
-      }
-      _comment_driven_access_in_depth($parent, TRUE);
+    // IMPORTANT: apply Access Control Policies
+    // if it returns FALSE then cleanup left nothing to work with
+    if (!comment_driven_access_control($ned_form, $driven_props)) {
+      return; // step out of the way
     }
     
     if (variable_get('comment_driven:empty_comment_' . $node_type, 1)) {
@@ -629,15 +644,10 @@ function comment_driven_form_alter(&$form, &$form_state, $form_id) {
   }
 }
 
-function _comment_driven_access_in_depth(&$element, $allowed) {
-  _comment_driven_prop_in_depth($element, '#access', $allowed);
-}
-
-function _comment_driven_prop_in_depth(&$element, $key, $value) {
-  foreach (element_children($element) as $child) {
-    _comment_driven_prop_in_depth($element[$child], $key, $value);
-    $element[$child][$key] = $value;
-  }
+function comment_driven_access_control(&$ned_form, $driven_props, $full_access = FALSE) {
+  module_load_include('inc', 'comment_driven', 'comment_driven.ac');
+  // let the caller know if there was something left
+  return _comment_driven_access_control($ned_form, $driven_props, $full_access);
 }
 
 function _comment_driven_disguise($element) {
@@ -927,14 +937,36 @@ function comment_driven_symmetric_diff($arr1, $arr2) {
 }
 
 // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
-function comment_driven_assertion_failed($assertion) {
+function comment_driven_assertion_failed($assertion, $dump = array(), $limit_dump_keys = array()) {
   if (COMMENT_DRIVEN__ASSERTIONS) {
-    $msg = t('Assertion failed: "@assertion". Please <a href="http://drupal.org/project/issues/comment_driven">report this bug</a>.', array('@assertion' => $assertion));
-    if (COMMENT_DRIVEN__ASSERTIONS & COMMENT_DRIVEN__ASSERTIONS__DISPLAY) {
-      drupal_set_message($msg, 'error', FALSE);
+    $msg = t('Assertion failed: "@assertion".', array('@assertion' => $assertion));
+    $msg .= ' ' . t('Please <a href="http://drupal.org/project/issues/comment_driven">report this bug</a>.');
+    
+    if (!empty($limit_dump_keys)) {
+      foreach ($dump as $key => $value) {
+        // cast to string to avoid zero being matched with strings
+        if (!in_array((string)$key, $limit_dump_keys)) {
+          unset($dump[$key]);
+        }
+      }
     }
+    if (!empty($dump)) {
+      $dump_msg = '<br/>' . t('Dumped data:') . '<br/><code>' . nl2br(str_replace(' ', '&nbsp;', var_export($dump, TRUE))) . '</code>';
+    }
+    
     if (COMMENT_DRIVEN__ASSERTIONS & COMMENT_DRIVEN__ASSERTIONS__LOG) {
-      watchdog('comment_driven', $msg, NULL, WATCHDOG_ERROR);
+      watchdog('comment_driven', $msg . $dump_msg, NULL, WATCHDOG_ERROR);
+    }
+    // after watchdog, since above will always dump data
+    // and $msg might get it added as well
+    if (COMMENT_DRIVEN__ASSERTIONS & COMMENT_DRIVEN__ASSERTIONS__DISPLAY) {
+      if (COMMENT_DRIVEN__ASSERTIONS__DUMP_DATA) {
+        $msg .= $dump_msg;
+      }
+      elseif (!empty($dump)) {
+        drupal_set_message(t('You can find further details in <a href="!url">log entries</a>.', array('!url' => url('admin/reports/dblog'))), 'notice', FALSE);
+      }
+      drupal_set_message($msg, 'error', FALSE);
     }
   }
 }
@@ -1006,8 +1038,23 @@ function comment_driven_preprocess_comment(&$vars) {
   $diff_render = $live_render ? comment_driven_diff_render($node_type, $log->changes) : $log->diff_render;
   $diff_summary_table = comment_driven_diff_summary_table($diff_render);
   
+  if (variable_get('comment_driven:inspect_links', 1) && user_access(COMMENT_DRIVEN_INSPECT__PERM) && module_exists('comment_driven_inspect')) {
+    if (empty($diff_render)) {
+      // if this point was reached then !empty($log->changes)
+      // lets print something to allow hover on it
+      $diff_summary_table = '<div class="error" style="width:20%">diff_render???</div>';
+    }
+    $url = url('admin/build/comment_driven/inspect', array('query' => "ids=$comment->cid"));
+    // CSS class for hover support
+    $diff_inspect = '<a class="comment_driven_inspect" href="' . $url . '">' . t('driven inspect') . '</a>';
+    $diff_prefix = '<div class="comment_driven_inspect">' . $diff_inspect . $diff_summary_table . '</div>';
+  }
+  else {
+    $diff_prefix = $diff_summary_table;
+  }
+  
   //$vars['comment_body'] = $vars['content']; // $vars['comment']->comment
-  $vars['content'] = $diff_summary_table . $vars['content'];
+  $vars['content'] = $diff_prefix . $vars['content'];
 
   if ($log->old_vid != $log->new_vid) {
     // to be used like: print l(t('view revision before changes'), $driven_revision_before . '/view')

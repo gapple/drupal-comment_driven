@@ -1,7 +1,8 @@
 ; $Id$
-name = Comment driven (taxo)
-description = Allows comments to alter node's taxonomy
+name = Driven taxonomy
+description = Allows comments to alter node's taxonomy.
 core = 6.x
+package = Driven
 
 dependencies[] = comment_driven
 dependencies[] = taxonomy

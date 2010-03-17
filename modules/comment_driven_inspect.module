@@ -1,0 +1,33 @@
+<?php
+// $Id$
+
+/**
+ * Implements hook_perm(). 
+ */
+function comment_driven_inspect_perm() {
+  return array(COMMENT_DRIVEN_INSPECT__PERM);
+}
+
+/**
+ * Implements hook_menu().
+ */
+function comment_driven_inspect_menu() {
+  $items['admin/build/comment_driven'] = array(
+    'title' => 'Comment driven',
+    'access arguments' => array(COMMENT_DRIVEN_INSPECT__PERM),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('comment_driven_inspect'),
+    'file' => 'comment_driven_inspect.admin.inc',
+    'type' => MENU_NORMAL_ITEM,
+  );
+  $items['admin/build/comment_driven/inspect'] = array(
+    'title' => 'Inspect',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => '-1'
+  );
+  return $items;
+}
+
+function comment_driven_inspect_load() {
+  module_load_include('inc', 'comment_driven_inspect', 'comment_driven_inspect.api');
+}

@@ -245,8 +245,7 @@ function comment_driven_cck_diff_values($element, $form_values, $meta) {
   // if values are not at this level pass through it
   // careful, isset is not enough, since it can be NULL (e.g. number)
   // not using in_array, since it compares and matches zero with string
-  // @TODO: don't know other way to discriminate cck's number having NULL #default_value
-  if (!isset($element['#default_value']) && (!isset($element['#type']) || ($element['#type'] != 'number' || !isset($element['_error_element'])))) {
+  if (!comment_driven_has_default_value_key($element)) {
     if (!count(element_children($element))) {
       // bypass (it should be add_more or something else)
       return FALSE;
@@ -266,6 +265,9 @@ function comment_driven_cck_diff_values($element, $form_values, $meta) {
       // on diff_render symmetric_diff will drop the keys
       // therefore reseted indexes wouldn't harm here
       // but wouldn't be accurate either (e.g. for debugging)
+      // in addition, content_taxonomy handles the key 'tids'
+      // which this way is persisted into diff_values
+      // and later recognized in diff_render time
       $olds[$key] = $old;
       $news[$key] = $new;
     }
@@ -456,7 +458,6 @@ function comment_driven_cck_diff_render($old, $new, $meta) {
     // but comment_driven_taxo won't be aware of it 
     return comment_driven_taxo_diff_render($old['tids'], $new['tids'], $meta + $taxo_meta);
   }
-  
   
   $node = (object)array(
     'type' => $node_type, 

@@ -129,19 +129,19 @@ function comment_driven_node_diff_values($element, $form_values, $meta) {
   extract($meta); // $realm, $property_path, $theme
   
   // if values are not at this level pass through it
-  // IMPORTANT: differs from CCK, where #default_values are initialized to empty string in the worse case
-  // for node properties we must consider existing keys with NULL values
-  // to support textfields (e.g. path) 
-  if (!in_array('#default_value', array_keys($element))) {
-    if ($element['#parents'][0] == 'body_field') {
-      return _comment_driven_node_diff_body($element, $form_values, $meta);
-    }
-    
+  // careful, isset is not enough, since it can be NULL
+  // not using in_array, since it compares and matches zero with string
+  if (!comment_driven_has_default_value_key($element)) {
     if (!count(element_children($element))) {
       // bypass (it should be a wrapper or something else)
       return FALSE;
     }
   
+    // @TODO: why WAS this above checking for !count(element_children($element)) ??
+    if ($element['#parents'][0] == 'body_field') {
+      return _comment_driven_node_diff_body($element, $form_values, $meta);
+    }
+    
     foreach (element_children($element) as $key) {
       $diff_values = comment_driven_node_diff_values($element[$key], $form_values, $meta);
       if (!$diff_values) continue;

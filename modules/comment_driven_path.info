@@ -1,7 +1,8 @@
 ; $Id$
-name = Comment driven (path)
-description = Allows comments to alter node's URL path
+name = Driven path
+description = Allows comments to alter node's URL path.
 core = 6.x
+package = Driven
 
 dependencies[] = comment_driven
 dependencies[] = path

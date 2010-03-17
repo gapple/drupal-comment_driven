@@ -83,3 +83,19 @@ table.comment_driven .comment-settings.read-write {
   background-image: url(img/ok.png);
 }
 
+div.comment_driven_inspect {
+  position: relative;
+}
+
+a.comment_driven_inspect {
+  display: none;
+  position: absolute;
+  background-color: white;
+  border: 1px dashed black;
+  font-size: 0.8em;
+  padding: 2px 8px;
+}
+
+div:hover.comment_driven_inspect a.comment_driven_inspect {
+  display: block;
+}

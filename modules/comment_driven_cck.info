@@ -1,7 +1,8 @@
 ; $Id$
-name = Comment driven (cck)
-description = Allows comments to alter node's CCK fields
+name = Driven CCK
+description = Allows comments to alter node's CCK fields.
 core = 6.x
+package = Driven
 
 dependencies[] = comment_driven
 dependencies[] = content

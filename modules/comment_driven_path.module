@@ -33,10 +33,10 @@ function comment_driven_path_diff_values($element, $form_values, $meta) {
   
   // until now we handle a unique (well known) property here
   
-  $default = isset($element['path']['#default_value']) ? $element['path']['#default_value'] : '';
+  $default = comment_driven_known_default_value($element);
   // $value will be normized if needed (per case basis)
   // to match #default_value format instead of $form_state['values']
-  $value = $form_values['path'];
+  $value = comment_driven_form_get_value($element['#parents'], $form_values);
   
   if (_comment_driven_equal_non_array($default, $value)) return FALSE;
   return array($default, $value);
@@ -51,8 +51,9 @@ function comment_driven_path_diff_render($old, $new, $meta) {
   // the property that path module adds to nodes is path
   // there are contrib modules which add more stuff under "URL path" fieldset
   // but they will need to request to be supported here
-  $outgoing = $old;
-  $incoming = $new;
+  // @TODO: review pathauto & other modules acting on path
+  $outgoing = $old['path'];
+  $incoming = $new['path'];
   
   // don't create a link unless an actual path exists
   // (an of course, don't hit the database to look for an empty string)

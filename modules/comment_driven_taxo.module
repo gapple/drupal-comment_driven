@@ -61,7 +61,7 @@ function comment_driven_taxo_diff_values($element, $form_values, $meta) {
   // until we meet special cases
   // (e.g. taxiselect uses extra checkbox & hidden, but the should be ignored as well)
 
-  $default = $element['#default_value'];
+  $default = comment_driven_known_default_value($element);
   // $value will be normized if needed (per case basis)
   // to match #default_value format instead of $form_state['values']
   $value = comment_driven_form_get_value($element['#parents'], $form_values);
@@ -396,23 +396,26 @@ function comment_drivent_taxo_get_term_by_name($vid, $term_name, $single = FALSE
 // since taxonomy module renders them for preview
 // lets support the same here
 function comment_driven_taxo_warn_tag_not_found($tag, $vid) {
-  $details = t('Tag %tag couldn\'t be fetched from vocabulary %vid.', array(
+  $msg = 'Tag %tag couldn\'t be fetched from vocabulary %vid.';
+  $args = array(
     '%tag' => $tag, 
     '%vid' => $vid,
-  ));
-  comment_driven_warn_inaccurate_diff($details);
+  );
+  comment_driven_warn_inaccurate_diff($msg, $args);
 }
 */
 
 function comment_driven_taxo_warn_term_not_found($tid, $vid) {
-  $details = t('Term %tid couldn\'t be fetched from vocabulary %vid.', array(
+  $msg = 'Term %tid couldn\'t be fetched from vocabulary %vid.';
+  $args = array(
     '%tid' => $tid, 
     '%vid' => $vid,
-  ));
-  comment_driven_warn_inaccurate_diff($details);
+  );
+  comment_driven_warn_inaccurate_diff($msg, $args);
 }
 
 function comment_driven_taxo_warn_vocabulary_not_found($vid) {
-  $details = t('Vocabulary %vid couldn\'t be fetched.', array('%vid' => $vid));
-  comment_driven_warn_inaccurate_diff($details);
+  $msg = 'Vocabulary %vid couldn\'t be fetched.';
+  $args = array('%vid' => $vid);
+  comment_driven_warn_inaccurate_diff($msg, $args);
 }

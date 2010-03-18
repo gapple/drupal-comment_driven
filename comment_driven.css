@@ -87,15 +87,16 @@ div.comment_driven_inspect {
   position: relative;
 }
 
-a.comment_driven_inspect {
+.comment_driven_inspect-content {
   display: none;
   position: absolute;
-  background-color: white;
-  border: 1px dashed black;
+  top: -2.5em;
+  background-color: #ffe;
+  border: 1px dashed #cbe087;
   font-size: 0.8em;
   padding: 2px 8px;
 }
 
-div:hover.comment_driven_inspect a.comment_driven_inspect {
+div:hover.comment_driven_inspect .comment_driven_inspect-content {
   display: block;
 }

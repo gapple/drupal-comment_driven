@@ -28,6 +28,7 @@ function comment_driven_inspect_menu() {
   return $items;
 }
 
+// helper function to include inspector API
 function comment_driven_inspect_load() {
   module_load_include('inc', 'comment_driven_inspect', 'comment_driven_inspect.api');
 }

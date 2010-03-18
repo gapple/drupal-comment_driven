@@ -30,7 +30,7 @@ function comment_driven_token_values($type, $object = NULL) {
     
     if ($log = comment_driven_load_log($comment->cid)) {
       $node_type = node_get_types('type', node_load($comment->nid))->type;
-      $live_render = comment_driven_is_live_render($node_type);
+      $live_render = (!$log->frozen && comment_driven_is_live_render($node_type));
       $diff_render = $live_render ? comment_driven_diff_render($node_type, $log->changes) : $log->diff_render;
       
       $rows = comment_driven_diff_summary_rows($diff_render);

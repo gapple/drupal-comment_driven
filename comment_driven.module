@@ -308,13 +308,24 @@ function comment_driven_is_live_render($node_type) {
   return variable_get('comment_driven:live_render_' . $node_type, 0);
 }
 
-// receive already translated message with technical details of the missing property/value
-function comment_driven_warn_inaccurate_diff($details) {
+// receives the property path and content type of the gone property
+function comment_driven_warn_property_gone($property_path, $node_type) {
+  $msg = 'Property path gone: %path. This property is no longer supported to be driven for content type %type.';
+  $args = array(
+    '%path' => $property_path,
+    '%type' => $node_type,
+  );
+  comment_driven_warn_inaccurate_diff($msg, $args);
+}
+
+// receives a message with technical details about the missing property/value
+// and the array of arguments for translation or NULL if it is already translated
+function comment_driven_warn_inaccurate_diff($msg, $args) {
   // global setting (not per content type)
   if (variable_get('comment_driven:warn_prop_or_val_gone', 1)) {
     // the displayed message is vage, since the visitor user doesn't need to know internal details
     drupal_set_message(t('Some diff summaries are missing changes of properties and/or values that are no longer available.'), 'warning', FALSE);
-    watchdog('comment_driven', $details, NULL, WATCHDOG_WARNING);
+    watchdog('comment_driven', $msg, $args, WATCHDOG_WARNING);
   }
 }
 
@@ -396,6 +407,7 @@ function comment_driven_available_properties($node_type) {
         // knowing for sure, that they won't make bad assumptions
         $driven_prop['meta'] += array(
           'realm' => $driven_prop['realm'],
+          'module' => $driven_prop['module'],
           'property_path' => $property_path,
         );
       }
@@ -403,6 +415,88 @@ function comment_driven_available_properties($node_type) {
     }
   }
   return $available_props;
+}
+
+// drive properties programmatically [#741274]
+// $node and $comment are faked,
+// just arrays/objects following the format of $form_state['values']
+// $errors is received by ref (to be retrieved by the caller)
+//
+// WARNING: core's behaviour does NOT check for Access Control
+// CHECK wether you might actually want to use comment_driven_save_with_ac instead
+// FAPI is responsible for guarding access control from posted data
+// (avoiding it to reach $form_state['values'])
+// but drupal_execute is receiving a manually provided $form_state['value']
+// therefore, access control should be honored by the caller function (if desired)
+function comment_driven_save($node, $comment, &$errors = NULL) {
+  $comment = (array)$comment;
+  $node = (array)$node;
+  $op = array('op' => t('Save'));
+  
+  $comment_driven = comment_driven_disguise_non_children($comment);
+  $form_state['values'] = $comment_driven + $node + $op;
+
+  // simply delegate to core
+  drupal_execute('comment_form', $form_state, $comment);
+  
+  $errors = form_get_errors();
+  // the operation succeeded if there were no errors 
+  return empty($errors);
+}
+
+// drive properties programmatically [#741274]
+// in addition to what comment_driven_save does
+// this version enforces access control over $form_state['values']
+function comment_driven_save_with_ac($node, $comment, &$errors = NULL) {
+  $comment = (array)$comment;
+  $node = (array)$node;
+  $op = array('op' => t('Save'));
+  
+  // complex logic was requested
+  // guiding the process will be required
+  
+  // build the form_id
+  $nid = $comment['nid'];
+  $node = node_load($nid);
+  $type = node_get_types('type', $node);
+  $node_type = $type->type;
+  $ned_form_id = $node_type . '_node_form';
+  
+  // prepare a fresh node_form (without any state)
+  // with the only purpose of recognize proper mapping
+  // of $ned_form elements to $ned_values and apply Access Control Policies
+  // which will be dismissed afterwards
+  $ned_form_state = array();
+  $ned_form = drupal_retrieve_form($ned_form_id, $ned_form_state, $node);
+  drupal_prepare_form($ned_form_id, $ned_form, $ned_form_state);
+  
+  $ned_values = $node;
+  // IMPORTANT: apply Access Control Policies to $ned_values
+  comment_driven_access_control_values($ned_values, $ned_form, $driven_props);
+  // if it $ned_values returned emptied
+  // then cleanup left nothing to work with
+  // and this function is meaningless for just saving a comment
+  // if such effect would be desired then use comment_driven_save instead
+  if (empty($ned_values)) {
+    $errors[] = t('Access Control Policies left no property to be driven.');
+    return FALSE; // step out of the way
+  }
+  // just in case, dismiss $node to make clear the intention
+  // of using the copy ($ned_values) filtered by Access Control Policies
+  unset($node);
+  // dismiss $ned_from, which only served to recognize proper mapping
+  // of $ned_form elements to $ned_values and apply Access Control Policies
+  unset($ned_form);
+  
+  $comment_driven = comment_driven_disguise_non_children($comment);
+  $form_state['values'] = $comment_driven + $ned_values + $op;
+  
+  // already filtered, simply delegate to core
+  drupal_execute('comment_form', $form_state, $comment);
+  
+  $errors = form_get_errors();
+  // the operation succeeded if there were no errors 
+  return empty($errors);
 }
 
 /**
@@ -549,7 +643,7 @@ function comment_driven_form_alter(&$form, &$form_state, $form_id) {
       $form['comment_driven'][$key] = $form[$key];
       unset($form[$key]);
     }
-    $form['comment_driven'] = _comment_driven_disguise($form['comment_driven']);
+    $form['comment_driven'] = _comment_driven_disguise_children($form['comment_driven']);
     // disguise supports only element_children
     // undisguise does support non-children as well
     // manually disguise non-children
@@ -650,7 +744,7 @@ function comment_driven_access_control(&$ned_form, $driven_props, $full_access =
   return _comment_driven_access_control($ned_form, $driven_props, $full_access);
 }
 
-function _comment_driven_disguise($element) {
+function _comment_driven_disguise_children($element) {
   // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
   if (!is_array($element)) comment_driven_assertion_failed('something nasty is happening somewhere: !is_array($element)');
   
@@ -666,7 +760,7 @@ function _comment_driven_disguise($element) {
     // protect ourself against 3rd parties creating NULL children (e.g. [#736968], [#737044])
     // lets babysit NULL children, but it has to be an array otherwise
     if (!is_null($element[$key])) {
-      $element[COMMENT_DRIVEN__DISGUISE_PREFIX . $key] = _comment_driven_disguise($element[$key]);
+      $element[COMMENT_DRIVEN__DISGUISE_PREFIX . $key] = _comment_driven_disguise_children($element[$key]);
     }
     // if it was NULL (above babysitting) won't hurt clearing it
     unset($element[$key]);
@@ -674,6 +768,19 @@ function _comment_driven_disguise($element) {
   return $element;
 }
 
+// helper function to drive properties programmatically [#741274] 
+function comment_driven_disguise_non_children($arr) {
+  // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
+  if (!is_array($arr)) comment_driven_assertion_failed('misusage of comment_driven_disguise_non_children: !is_array($arr)');
+  
+  $disguised = array();
+  foreach ($arr as $key => $value) {
+    $disguised[COMMENT_DRIVEN__DISGUISE_PREFIX . $key] = $arr[$key];
+  }
+  return $disguised;
+}
+
+// undisguise supports children and non-children as well
 function _comment_driven_undisguise($element) {
   // reverse disguised #parents
   if (!empty($element['#parents'])) {
@@ -924,16 +1031,28 @@ function comment_driven_submit($form, &$form_state) {
   $form_state['redirect'] = $redirect;
 }
 
-function comment_driven_form_changes($form, $form_state) {
-  $node_type = $form['#node']->type;
+// helper function to invoke comment_driven_diff_node_state with rational defaults
+// it is intended that comment_driven_diff_node_state
+// receives $form_values instead of $form_state (just to avoid the extra nested level)
+function comment_driven_form_changes($ned_form, $form_state) {
+  $node_type = $ned_form['#node']->type;
   $driven_props = comment_driven_get_properties($node_type);
-  module_load_include('inc', 'comment_driven', 'comment_driven.eq');
-  return _comment_driven_elem_changes($driven_props, $form, $form_state['values'], '');  
+  return comment_driven_diff_node_state($ned_form, $form_state['values'], $driven_props);
+}
+
+function comment_driven_diff_node_state($ned_form, $form_values, $driven_props) {
+  comment_driven_equality_load();
+  return _comment_driven_diff_node_state($ned_form, $form_values, $driven_props);  
 }
 
 function comment_driven_symmetric_diff($arr1, $arr2) {
-  module_load_include('inc', 'comment_driven', 'comment_driven.eq');
+  comment_driven_equality_load();
   return _comment_driven_symmetric_diff($arr1, $arr2);
+}
+
+// helper function to include equality API
+function comment_driven_equality_load() {
+  module_load_include('inc', 'comment_driven', 'comment_driven.eq');
 }
 
 // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
@@ -961,6 +1080,7 @@ function comment_driven_assertion_failed($assertion, $dump = array(), $limit_dum
     // and $msg might get it added as well
     if (COMMENT_DRIVEN__ASSERTIONS & COMMENT_DRIVEN__ASSERTIONS__DISPLAY) {
       if (COMMENT_DRIVEN__ASSERTIONS__DUMP_DATA) {
+        debug_print_backtrace();
         $msg .= $dump_msg;
       }
       elseif (!empty($dump)) {
@@ -998,16 +1118,13 @@ function comment_driven_diff_render($node_type, $changes) {
   $diff_render = array();
   foreach ($changes as $property_path => $change) {
     if (empty($available_props[$property_path])) {
-      // the provider module for this property
-      // is no longer providing this property for the content type in question
-      // it might be disabled or content type properties were changed
-      // (can't figure if the property exists for the content type)
+      // unable to find the property
       
-      $details = t('Property %prop is not longer supported to be driven for content type %type.', array(
-        '%prop' => $property_path, 
-        '%type' => $node_type,
-      ));
-      comment_driven_warn_inaccurate_diff($details);
+      // this might be possible due to properties moved or gone
+      // and content type form not re-submitted
+      // (e.g. fieldgroup/multigroup movement or disabling modules)
+// @TODO: cck realm might look if the property was moved and exists under a different path for the same content type
+      comment_driven_warn_property_gone($property_path, $node_type);
       
       continue; // bypass it
     }
@@ -1034,7 +1151,7 @@ function comment_driven_preprocess_comment(&$vars) {
   $log = comment_driven_load_log($comment->cid);
   if (!$log) return;
 
-  $live_render = comment_driven_is_live_render($node_type);
+  $live_render = (!$log->frozen && comment_driven_is_live_render($node_type));
   $diff_render = $live_render ? comment_driven_diff_render($node_type, $log->changes) : $log->diff_render;
   $diff_summary_table = comment_driven_diff_summary_table($diff_render);
   
@@ -1042,11 +1159,19 @@ function comment_driven_preprocess_comment(&$vars) {
     if (empty($diff_render)) {
       // if this point was reached then !empty($log->changes)
       // lets print something to allow hover on it
-      $diff_summary_table = '<div class="error" style="width:20%">diff_render???</div>';
+      $diff_summary_table = '<div class="error" style="width:20%">empty diff_render</div>';
     }
     $url = url('admin/build/comment_driven/inspect', array('query' => "ids=$comment->cid"));
     // CSS class for hover support
-    $diff_inspect = '<a class="comment_driven_inspect" href="' . $url . '">' . t('driven inspect') . '</a>';
+    $diff_inspect = '<div class="comment_driven_inspect-content">'
+      . '<a href="' . $url . '">' . t('driven inspect') . '</a>'
+      . ' {'
+      . 'cid: ' . $comment->cid
+      . '; vids: ' . $log->old_vid . '-' . $log->new_vid
+      . '; method: ' . ($log->frozen ? t('Frozen by flag') : ($live_render ? t('Live render per type') : t('Frozen per type')))
+      . '}'
+      . '</div>';
+    
     $diff_prefix = '<div class="comment_driven_inspect">' . $diff_inspect . $diff_summary_table . '</div>';
   }
   else {

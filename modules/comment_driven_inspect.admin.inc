@@ -35,6 +35,8 @@ function comment_driven_inspect($form_state) {
     'ulist' => TRUE, // lets enable one by default
   );
 
+  // in this case this approach was preferred over hook_help
+  // nevertheless, advanced_help would be better
   $form['intro'] = array(
     '#type' => 'item',
     '#value' => t('When <b>inspecting comments</b> (by their cids) the two associated revisions (before/after) will be compared.')
@@ -74,29 +76,40 @@ function comment_driven_inspect($form_state) {
     '#collapsed' => ($schema != 'comment_driven'),
     '#tree' => TRUE,
   );
-  $form['inspect']['phases']['live_comparison'] = array(
+  $form['inspect']['phases']['frozen'] = array(
     '#type' => 'checkbox',
-    '#title' => t('Live comparison'),
-    '#description' => t('Build diff_values from node revisions (aka import), which implies using live render.')
-      . '<br/>' . t('Note that this phase is not required for comment driven to work properly and therefore might have different bugs (aka out of synch).'),
-    '#default_value' => $phases['live_comparison'],
+    '#title' => t('Frozen (aka snapshot)'),
+    '#description' => t('Fetch diff_render from DB (bypass diff_values and live render).')
+      . '<br/>' . t('<b>Advantage</b>: faithful to the changes introduced at comment creation time.')
+      . '<br/>' . t('<b>Disadvantage</b>: theme registry changes will be ignored, since a saved render (snapshot) will be used.'),
+    '#default_value' => $phases['frozen'],
   );
   $form['inspect']['phases']['live_render'] = array(
     '#type' => 'checkbox',
     '#title' => t('Live render'),
-    '#description' => t('Fetch diff_values from DB and display them using live render.'),
+    '#description' => t('Fetch diff_values from DB and display them using live render.')
+      . '<br/>' . t('If an inaccurate (or empty) diff summary is rendered, then is should be due to gone properties/values.')
+      . '<br/>' . t('<b>Advantage</b>: theme registry changes will be properly reflected.')
+      . '<br/>' . t('<b>Disadvantage</b>: it might render innacurate diff summaries due to changes made to property definitions (e.g. CCK fields, taxonomy vocabularies) or deleted values (e.g. taxonomy terms, nodes referenced by CCK fields, etc).')
+      . '<br/>' . t('<b>Attenuation</b>: comments might be flagged to be frozen, i.e. refrain from using live render.'),
     '#default_value' => $phases['live_render'],
   );
-  $form['inspect']['phases']['frozen'] = array(
+  $form['inspect']['phases']['live_comparison'] = array(
     '#type' => 'checkbox',
-    '#title' => t('Frozen (aka snapshot)'),
-    '#description' => t('Fetch diff_render from DB (bypass diff_values and live render).'),
-    '#default_value' => $phases['frozen'],
+    '#title' => t('Live comparison'),
+    '#description' => t('Build diff_values from node revisions (aka import/refresh), which implies using live render.')
+      . '<br/>' . t('Note that this phase is not required for comment driven to properly work and therefore might have different bugs (i.e. out of synch).')
+      . '<br/>' . t('<b>Advantage</b>: it can perform comparisons between two arbitrary revisions of the same content type (even if they don\'t belong to the same node).')
+      . '<br/>' . t('<b>Disadvantage</b>: it can NOT detect changes on properties not handled by revisions (e.g. published, promoted).')
+      . '<br/>' . t('<b>Attenuation</b>: title, body, taxonomy and CCK fields do support revisions, therefore, there isn\'t much out of its scope.')
+      . '<br/>' . t('<b>Disadvantage</b>: requires revisions enabled, otherwise comparing a revision to itself returns no changes.')
+      . '<br/>' . t('<b>Attenuation</b>: working with revisions (driven enforced at least) is highly encouraged, since it facilitates further migration paths (even migrating to other modules, e.g. back to comment_cck).'),
+    '#default_value' => $phases['live_comparison'],
   );
   $form['inspect']['tokens'] = array(
     '#type' => 'fieldset',
     '#title' => t('Tokens'),
-    '#description' => t('Tokens are only appicable for comment driven changes history (they could perform with live comparison, but current implementation fetches diff_values or diff_render from DB according to: per log frozen flag or per content type live render setting).'),
+    '#description' => t('Tokens are only appicable for comment driven changes history (they fetch diff_values or diff_render from DB according to: per log frozen flag or per content type live render setting).'),
     '#collapsible' => TRUE,
     '#collapsed' => ($schema != 'comment_driven'),
     '#tree' => TRUE,
@@ -174,12 +187,18 @@ function comment_driven_inspect($form_state) {
   if (module_exists('taxonomy')) $sub_modules[] = 'comment_driven_taxo';
   if (module_exists('content')) $sub_modules[] = 'comment_driven_cck';
   if (module_exists('path')) $sub_modules[] = 'comment_driven_path';
+  $fixed_module_list = module_list();
   foreach ($sub_modules as $module) {
+    $fixed_module_list[$module] = $module;
     // we don't mind about bootstrap phases,
     // since these modules only expose comment_driven hooks
     module_load_include('module', $module);
   }
-  
+  // make the modules' hooks available
+  // (during the rest of the request will behave as being installed)
+  module_list(TRUE, FALSE, FALSE, $fixed_module_list);
+  module_implements(NULL, FALSE, TRUE);
+
   $processed = &$form['processed']['#value'];
   if ($cids) {
     // $schema is the module name
@@ -237,6 +256,8 @@ function comment_driven_inspect($form_state) {
       // we only need to know the type of the associated node
       // to find out available driven properties
       $comment = _comment_load($cid);
+      // it must exists, since we already filtered fetched triplets
+      $log = comment_driven_load_log($cid);
       $node_type = node_get_types('type', node_load($comment->nid))->type;
       
       $output[$cid] = array(
@@ -246,41 +267,42 @@ function comment_driven_inspect($form_state) {
         '#description' => t('revisions:') . l($old_vids[$cid], "node/$comment->nid/revisions/$old_vids[$cid]/view") . '-' . l($new_vids[$cid], "node/$comment->nid/revisions/$new_vids[$cid]/view"),
       );
 
-      if (!empty($tokens)) {
-        $output[$cid]['tokens'] = array(
-          '#type' => 'fieldset',
-          '#title' => t('Tokens'),
-          '#description' => t('Content type %type has live render: %status', array(
+      if ($schema == 'comment_driven') {
+        $output[$cid]['#description'] .= '<br/>' . t('Frozen flag is: <b>%state</b>', array(
+            '%state' => $log->frozen ? t('on') : t('off'), 
+          ))
+          . '<br/>' . t('Content type %type has live render: <b>%state</b>', array(
             '%type' => $node_type, 
-            '%status' => comment_driven_is_live_render($node_type) ? t('enabled') : t('disabled'), 
-          )),
-          '#collapsible' => TRUE,
-        );
-        // don't need token module to test our own tokens
-        $token_values = comment_driven_token_values('comment', $comment);
-        foreach ($tokens as $token) {
-          $output[$cid]['tokens'][$token] = array(
-            '#type' => 'item',
-            '#value' => ($token == 'plain_text')
-              ? nl2br($token_values['comment-driven-diff-lf'])
-              : $token_values['comment-driven-diff-' . $token],
+            '%state' => comment_driven_is_live_render($node_type) ? t('enabled') : t('disabled'), 
+          ));
+        
+        if (!empty($tokens)) {
+          $output[$cid]['tokens'] = array(
+            '#type' => 'fieldset',
+            '#title' => t('Tokens'),
+            '#description' => t('Note that token\'s diff summary should match "frozen" or "live render" deppending on per log frozen flag or per content type live render setting.'),
+            '#collapsible' => TRUE,
           );
-          if ($token == 'table') {
-            $table = &$output[$cid]['tokens'][$token]['#value'];
-            // need a minimal style to avoid width:100%
-            // it could be class="comment_driven",
-            // but lets make clear that it didn't passed through an advanced theme function
-            // and ensure theming overrides won't force it to a larger width
-            $table = str_replace('<table>', '<table style="width:auto">', $table);
+          // don't need token module to test our own tokens
+          $token_values = comment_driven_token_values('comment', $comment);
+          foreach ($tokens as $token) {
+            $output[$cid]['tokens'][$token] = array(
+              '#type' => 'item',
+              '#value' => ($token == 'plain_text')
+                ? nl2br($token_values['comment-driven-diff-lf'])
+                : $token_values['comment-driven-diff-' . $token],
+            );
+            if ($token == 'table') {
+              $table = &$output[$cid]['tokens'][$token]['#value'];
+              // need a minimal style to avoid width:100%
+              // it could be class="comment_driven",
+              // but lets make clear that it didn't passed through an advanced theme function
+              // and ensure theming overrides won't force it to a larger width
+              $table = str_replace('<table>', '<table style="width:auto">', $table);
+            }
           }
         }
-      }
 
-      // check selected phases (avoid load_log in vain)
-      if ($schema == 'comment_driven' && ($phases['frozen'] || $phases['live_render'])) {
-        // it must exists, since we already filtered fetched triplets
-        $log = comment_driven_load_log($cid);
-        
         foreach (array('frozen', 'live_render') as $phase) {
           if (!$phases[$phase]) continue;
           
@@ -331,7 +353,9 @@ function comment_driven_inspect($form_state) {
           $diff_summary = comment_driven_diff_summary_table($diff_render);
         }
       }
-        
+      
+      $errors[] = t('Be aware that ONLY properties which support revisions will be shown on live comparison.');
+      $errors[] = t('Also note that CCK restructuring might cause property revisions lost (mostly when changing fields\' multiplicity).');
       $output[$index]['phases'][$phase] = array(
         '#type' => 'fieldset',
         '#title' => $form['inspect']['phases'][$phase]['#title'],

@@ -242,65 +242,11 @@ function comment_driven_cck_diff_values($element, $form_values, $meta) {
     return FALSE; // nothing to declare (i.e. return no diff_values)
   }
 
-  // if values are not at this level pass through it
-  // careful, isset is not enough, since it can be NULL (e.g. number)
-  // not using in_array, since it compares and matches zero with string
-  if (!comment_driven_has_default_value_key($element)) {
-    if (!count(element_children($element))) {
-      // bypass (it should be add_more or something else)
-      return FALSE;
-    }
-    
-    // @TODO: FIXME: don't miss extra items added with add_more button
-    // remember that $form_values might have more deltas than $element
-    // fixes attempts brought other bugs:
-    // - re-preview loosing added fields after some idle time
-    // - uncontroled _error_element ruining symmetric diff
-    // - filling with inplace built empty ala content_set_empty without presave/etc
-    foreach (element_children($element) as $key) {
-      $diff_values = comment_driven_cck_diff_values($element[$key], $form_values, $meta);
-      if (!$diff_values) continue;
-      
-      list($old, $new) = $diff_values;
-      // on diff_render symmetric_diff will drop the keys
-      // therefore reseted indexes wouldn't harm here
-      // but wouldn't be accurate either (e.g. for debugging)
-      // in addition, content_taxonomy handles the key 'tids'
-      // which this way is persisted into diff_values
-      // and later recognized in diff_render time
-      $olds[$key] = $old;
-      $news[$key] = $new;
-    }
-    
-    if (empty($olds) && empty($news)) return FALSE;
-    return array($olds, $news);
-  }
-  
-  // this is done here, since it depends on $field['multiple']
-  // which may vary in time (therefore can't be set into $meta at hook_driven_properties)
-  // multiple:
-  // 0 = FALSE => single value
-  // 1 = TRUE => Ulimited => AHAH add_more
-  // 2+ = TRUE => Limited
-  //
-  // see content_field_form
-  //
-  // If the widget is handling multiple values (e.g optionwidgets),
-  // or selecting an individual element, just get a single form
-  // element and make it the $delta value.
-  //
-  // If we're processing a specific delta value for a field where the
-  // content module handles multiples, set the delta in the result.
-  // For fields that handle their own processing, we can't make assumptions
-  // about how the field is structured, just merge in the returned value.
-  //
-  // @TODO: @per-module-discrimination: "can't make assumptions about how the field is structured"
-
-  $default = $element['#default_value'];
+  $default = comment_driven_known_default_value($element);
   // $value will be normized if needed (per case basis)
   // to match #default_value format instead of $form_state['values']
   $value = comment_driven_form_get_value($element['#parents'], $form_values);
-
+  
   // @per-module-discrimination
   switch ($field['type']) {
     case 'filefield':
@@ -350,13 +296,36 @@ function comment_driven_cck_diff_values($element, $form_values, $meta) {
     'build_mode' => NODE_BUILD_NORMAL
   );
 
+  // this is done here, since it depends on $field['multiple']
+  // which may vary in time (therefore can't be set into $meta at hook_driven_properties)
+  // multiple:
+  // 0 = FALSE => single value
+  // 1 = TRUE => Ulimited => AHAH add_more
+  // 2+ = TRUE => Limited
+  //
+  // see content_field_form
+  //
+  // If the widget is handling multiple values (e.g optionwidgets),
+  // or selecting an individual element, just get a single form
+  // element and make it the $delta value.
+  //
+  // If we're processing a specific delta value for a field where the
+  // content module handles multiples, set the delta in the result.
+  // For fields that handle their own processing, we can't make assumptions
+  // about how the field is structured, just merge in the returned value.
+  //
+  // @TODO: @per-module-discrimination: "can't make assumptions about how the field is structured"
+  //
   // - if it is a single item then it gets here with its proper array
   // - if it is multiple items then it gets here by pieces
   //   being each single item a respective delta, which need to be wrapped into an array
   // - exception: multiple items handled altogether instead of by pieces (e.g. checkboxes)
-  
+  //  
   // discriminate based on whether #default_value is an array of delta=>item
   // or just an direct item (without the wrapper parent)
+  //
+  // deliberately not using neither: comment_driven_has_default_value_key, comment_driven_known_default_value
+  // if this point was reached $element should be a non-wrapper
   $separated_item = !isset($element['#default_value'][$element['#delta']]);
   
   // wrap separated item into items
@@ -519,9 +488,10 @@ function comment_driven_cck_get_field($field_name, $node_type) {
 }
 
 function comment_driven_cck_warn_field_not_found($field_name, $node_type) {
-  $details = t('Field %field couldn\'t be fetched for content type %type.', array(
+  $msg = 'Field %field couldn\'t be fetched for content type %type.';
+  $args = array(
     '%field' => $field_name, 
     '%type' => $node_type,
-  ));
-  comment_driven_warn_inaccurate_diff($details);
+  );
+  comment_driven_warn_inaccurate_diff($msg, $args);
 }

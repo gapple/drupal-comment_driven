@@ -229,6 +229,15 @@ function comment_driven_cck_driven_properties($node_type) {
   return $available_props;
 }
 
+function comment_driven_cck_limit_value_keys($default, $value) {
+  // remove from $value keys which are not present in $default
+  $keys = array_diff(array_keys($value), array_keys($default));
+  foreach ($keys as $key) {
+    unset($value[$key]);
+  }
+  return $value;
+}
+
 /**
  * Implements hook_diff_values().
  */
@@ -251,10 +260,7 @@ function comment_driven_cck_diff_values($element, $form_values, $meta) {
   switch ($field['type']) {
     case 'filefield':
       // remove from $value keys which are not present in $default
-      $keys = array_diff(array_keys($value), array_keys($default));
-      foreach ($keys as $key) {
-        unset($value[$key]);
-      }
+      $value = comment_driven_cck_limit_value_keys($default, $value);
       break;
       
     case 'date':
@@ -266,6 +272,8 @@ function comment_driven_cck_diff_values($element, $form_values, $meta) {
       // instead and do our conversion to local dates in the form and
       // in the formatters.
       $timezone = date_get_timezone($field['tz_handling'], isset($default['timezone']) ? $default['timezone'] : date_default_timezone_name());
+      // date_process_values is only a helper function which does
+      // return $field['todate'] ? array('value', 'value2') : array('value');
       $process = date_process_values($field);
       foreach ($process as $processed) {
         if (!isset($value[$processed])) {
@@ -275,6 +283,9 @@ function comment_driven_cck_diff_values($element, $form_values, $meta) {
         $value[$processed] = is_object($date) ? date_format($date, DATE_FORMAT_DATETIME) : '';
       }
 
+      // remove from $value keys which are not present in $default
+      // (e.g. offset, offset2, and also value2 if no $field['todate'])
+      $value = comment_driven_cck_limit_value_keys($default, $value);
       // copy from $default keys which are not present in $value
       $keys = array('timezone_db', 'date_type');
       foreach ($keys as $key) {

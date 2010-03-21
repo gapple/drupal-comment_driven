@@ -652,6 +652,9 @@ function comment_driven_form_alter(&$form, &$form_state, $form_id) {
       $form['comment_driven']['#' . COMMENT_DRIVEN__DISGUISE_PREFIX . $key] = $form[$key];
       unset($form[$key]);
     }
+    // this was already unset while manually disguising non-children (right above)
+    // but lets make clear the intention of letting $ned_form['#submit'] get in on $form += $ned_form
+    unset($form['#submit']);
     // preserve other submit handlers from node_form (e.g. menu_node_form_submit, taxonomy_single_tag_node_form_submit)
     // (the main submit won't get in, since it is in the buttons)
     // since $form['#submit'] was unset above,

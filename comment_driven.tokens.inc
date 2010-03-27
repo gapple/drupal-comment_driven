@@ -31,21 +31,15 @@ function comment_driven_token_values($type, $object = NULL) {
     if ($log = comment_driven_load_log($comment->cid)) {
       $node_type = node_get_types('type', node_load($comment->nid))->type;
       $live_render = (!$log->frozen && comment_driven_is_live_render($node_type));
-      $diff_render = $live_render ? comment_driven_diff_render($node_type, $log->changes) : $log->diff_render;
+      $diff_render = $live_render ? driven_diff_render($node_type, $log->changes) : $log->diff_render;
       
-      $rows = comment_driven_diff_summary_rows($diff_render);
-      foreach($rows as $index => $row) {
-        $rows[$index][0] = strip_tags($row[0]); // label
-        $rows[$index][1] = strip_tags($row[1]); // outgoing
-        $rows[$index][3] = strip_tags($row[3]); // incoming
-      }
-      $tokens['comment-driven-diff-table'] = theme('comment_driven_simple_table', $rows);
-      $tokens['comment-driven-diff-ulist'] = theme('comment_driven_simple_ulist', $rows);
+      $rows = driven_diff_summary_rows_strip_tags($diff_render);
+      $tokens['comment-driven-diff-table'] = driven_diff_output('driven_diff_simple_table', array('rows' => $rows));
+      $tokens['comment-driven-diff-ulist'] = driven_diff_output('driven_diff_simple_ulist', array('rows' => $rows));
       
       $plain_text = array();
       foreach ($rows as $index => $row) {
-        $rows[$index][2] =  '>>'; // replace &raquo;
-        $plain_text[] = implode(' ', $rows[$index]); // concatenate
+        $plain_text[] = implode(' ', $row); // concatenate
       }
       $tokens['comment-driven-diff-crlf']  = implode("\r\n", $plain_text);
       $tokens['comment-driven-diff-lf']    = implode("\n", $plain_text);

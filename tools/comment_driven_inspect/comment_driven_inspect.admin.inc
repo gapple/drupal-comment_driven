@@ -1,15 +1,7 @@
 <?php
 // $Id$
 
-// include comment_driven_inspect.api.inc
-comment_driven_inspect_load();
-
-function comment_driven_inspect_module_installed($module) {
-  include_once './includes/install.inc';
-  return drupal_get_installed_schema_version($module) != SCHEMA_UNINSTALLED;
-}
-
-function comment_driven_inspect($form_state) {
+function comment_driven_inspect_form($form_state) {
   $form_values = $form_state['values'];
   $ids = $form_values['ids'];
   if (empty($ids) && isset($_GET['ids'])) {
@@ -18,10 +10,34 @@ function comment_driven_inspect($form_state) {
     // while provided input makes ids=Y and it prevails,
     // but copy/pasting the URL will bring ids=X instead of ids=Y
     // the cost worth it, since this URL feature will be used
-    // to provide in inpect links inplace
+    // to provide inspect links inplace
     // whenever a diff_summary is rendered (and the user has permission)
     $ids = $_GET['ids'];
   }
+  
+  // IMPORTANT: special support for comment_driven & comment_cck
+  // ensure comment_driven in the first position
+  $mapping['comment_driven'] = array(
+    // shema mapping for cid,old_vid,new_vid,changes,diff_render
+    'query' => 'SELECT * FROM {comment_driven_log}',
+    'diff_render' => TRUE, // i.e. supported phase: frozen (aka snapshot) 
+    'changes' => TRUE, // i.e. supported phase: live render
+  );
+  $mapping['comment_cck'] = array(
+    // shema mapping for cid,old_vid,new_vid
+    'query' => 'SELECT cid, previous_vid AS old_vid, vid AS new_vid FROM {comment_cck_revisions}',
+    // no diff_render, i.e. unsupported phase: frozen (aka snapshot)
+    // no changes, i.e. unsupported phase: live render
+  );
+  // @TODO: temporal dirty flag (until we have advanced_help)
+  $at_least_one_mapping_installed = FALSE;
+  foreach (array_keys($mapping) as $module) {
+    $mapping[$module]['installed'] = driven_inspect_module_installed($module);
+    if ($mapping[$module]['installed']) {
+      $at_least_one_mapping_installed = TRUE;
+    }
+  }
+  
   $schema = empty($form_values['schema']) ? 'comment_driven' : $form_values['schema'];
   // if schema != 'comment_driven' phases will be ignored
   // and live_comparison will be used
@@ -29,89 +45,155 @@ function comment_driven_inspect($form_state) {
     'live_comparison' => TRUE,
     'live_render' => TRUE,
     'frozen' => TRUE,
+    'diff_values' => TRUE,
   );
   // if schema != 'comment_driven' tokens will be ignored
   $tokens = isset($form_values['tokens']) ? $form_values['tokens'] : array(
     'ulist' => TRUE, // lets enable one by default
   );
-
+  
   // in this case this approach was preferred over hook_help
   // nevertheless, advanced_help would be better
   $form['intro'] = array(
-    '#type' => 'item',
-    '#value' => t('When <b>inspecting comments</b> (by their cids) the two associated revisions (before/after) will be compared.')
+    '#type' => 'fieldset',
+    '#title' => t('Help'),
+    '#collapsible' => TRUE,
+    '#collapsed' => !empty($ids),
+    '#description' => t('When <b>inspecting arbitrary couples of node revisions</b> (vid pairs) the only constraint is that both revisions in a couple must belong to nodes of the same content type.')
+      . '<br/>' . t('Therefore, it is considered valid to compare a revision to itself, to a previous or subsequent revision, or even to a revision of a different node.')
+      . '<br/>' . t('When <b>inspecting comments</b> (by their cids) the two associated revisions (before/after) will be compared.')
       . '<br/>' . t('Such comments should be found in the selected "revision changes history" table.') 
-      . '<br/>' . t('Any schema/mapping can be supported, as long as the three required columns be provided (under any name) relating the comment id to a couple of node revision ids.')
-      . '<br/>' . t('When <b>inspecting arbitrary couples of node revisions</b> (vid pairs) the only constraint is that both revisions in a couple must belong to nodes of the same content type.')
-      . '<br/>' . t('Therefore, it is considered valid to compare a revision to itself, to a previous or subsequent revision, or even to a revision of a different node.'),
+      . '<br/>' . t('Any schema/mapping can be supported, as long as the three required columns be provided (with arbitrary names) relating the comment id to a couple of node revision ids.'),
   );
+  
+  $form['prop_providers'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Property providers'),
+    '#description' => t('Operations will be performed within the scope of enabled property provider modules'),
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE,
+  );
+  $form['prop_providers']['list'] = array(
+    '#type' => 'item',
+    '#prefix' => '<ul>',
+    '#suffix' => '</ul>',
+  );
+  $at_least_one_property_provided = FALSE;
+  foreach (array('driven_node', 'driven_taxo', 'driven_cck', 'driven_path') as $module) {
+    $found = module_exists($module);
+    $form['prop_providers']['list'][$module] = array(
+      '#type' => 'markup',
+      '#value' => $module,
+      '#prefix' => '<li>',
+      '#suffix' => '</li>',
+    );
+    if ($found) {
+      $at_least_one_property_provided = TRUE;
+    }
+    else {
+      $form['prop_providers']['list'][$module]['#value'] .= ' (' . t('disabled') . ')';
+    }
+  }
+  if (!$at_least_one_property_provided) {
+    $form['prop_providers']['#collapsed'] = FALSE;
+    $form['prop_providers']['useless'] = array(
+      '#type' => 'item',
+      '#value' => t('There are no driven properties exposed. You have to enable some property provider modules.'),
+      '#prefix' => '<div class="warning">',
+      '#suffix' => '</div>',
+    );
+  }
   
   $form['ids'] = array(
     '#type' => 'textfield',
     '#title' => t('IDs'),
-    '#description' => t('Comma (or space) separated cids (e.g. 123, 456) or vid pairs (e.g. 123-124, 124-125).'),
+    '#description' => t('Comma (or space) separated vid pairs (e.g. 123-124, 124-125) or cids (e.g. 123, 456).'),
     '#default_value' => $ids,
   );
   $form['inspect'] = array(
     '#type' => 'fieldset',
     '#title' => t('What to inspect'),
     '#collapsible' => TRUE,
-    '#collapsed' => !empty($ids),
+    '#collapsed' => TRUE,//!(empty($ids) && $at_least_one_mapping_installed),
+    '#description' => t('Even when following modules might not be installed at all, these options are (temporary) provided as documentation.'),
   );
+  foreach (array_keys($mapping) as $module) {
+    $options[$module] = $module;
+    if (!$mapping[$module]['installed']) {
+      $options[$module] .= ' (' . t('not installed') . ')';
+    }
+  }
   $form['inspect']['schema'] = array(
     '#type' => 'radios',
     '#title' => t('Revision changes history'),
     '#description' => t('Only applicable to cids, since vid pairs come from {node_revision} table'),
     '#default_value' => $schema,
-    '#options' => drupal_map_assoc(array(
-      'comment_driven',
-      'comment_cck',
-    )),
+    '#options' => $options,
   );
   $form['inspect']['phases'] = array(
     '#type' => 'fieldset',
     '#title' => t('Phases'),
     '#description' => t('Phases are only appicable for comment driven changes history, otherwise live comparison will be used regardless of selected phases bellow.'),
     '#collapsible' => TRUE,
-    '#collapsed' => ($schema != 'comment_driven'),
+    '#collapsed' => ($schema != 'comment_driven' || !$mapping['comment_driven']['installed']),
     '#tree' => TRUE,
+  );
+  
+  // @TODO: claiming for advanced_help
+  $pro_cons = array(
+    '#type' => 'fieldset',
+    '#title' => t('Pro/Cons'),
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE,
+  );
+  $form['inspect']['phases']['diff_values'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('diff_values (dump)'),
+    '#description' => t('Fetch diff_values from DB and display them using var_export.'),
+    '#default_value' => $phases['diff_values'],
   );
   $form['inspect']['phases']['frozen'] = array(
     '#type' => 'checkbox',
     '#title' => t('Frozen (aka snapshot)'),
-    '#description' => t('Fetch diff_render from DB (bypass diff_values and live render).')
-      . '<br/>' . t('<b>Advantage</b>: faithful to the changes introduced at comment creation time.')
-      . '<br/>' . t('<b>Disadvantage</b>: theme registry changes will be ignored, since a saved render (snapshot) will be used.'),
+    '#description' => t('Fetch diff_render from DB (bypass diff_values and live render).'),
     '#default_value' => $phases['frozen'],
+  );
+  $form['inspect']['phases']['frozen_pro_cons'] = $pro_cons + array(
+    '#description' => t('<b>Advantage</b>: faithful to the changes introduced at comment creation time.')
+      . '<br/>' . t('<b>Disadvantage</b>: theme registry changes will be ignored, since a saved render (snapshot) will be used.'),
   );
   $form['inspect']['phases']['live_render'] = array(
     '#type' => 'checkbox',
     '#title' => t('Live render'),
     '#description' => t('Fetch diff_values from DB and display them using live render.')
-      . '<br/>' . t('If an inaccurate (or empty) diff summary is rendered, then is should be due to gone properties/values.')
-      . '<br/>' . t('<b>Advantage</b>: theme registry changes will be properly reflected.')
-      . '<br/>' . t('<b>Disadvantage</b>: it might render innacurate diff summaries due to changes made to property definitions (e.g. CCK fields, taxonomy vocabularies) or deleted values (e.g. taxonomy terms, nodes referenced by CCK fields, etc).')
-      . '<br/>' . t('<b>Attenuation</b>: comments might be flagged to be frozen, i.e. refrain from using live render.'),
+      . '<br/>' . t('If an inaccurate (or empty) diff summary is rendered, then is should be due to gone properties/values.'),
     '#default_value' => $phases['live_render'],
+  );
+  $form['inspect']['phases']['live_render_pro_cons'] = $pro_cons + array(
+    '#description' => t('<b>Advantage</b>: theme registry changes will be properly reflected.')
+      . '<br/>' . t('<b>Disadvantage</b>: it might render innacurate diff summaries due to changes made to property definitions (e.g. CCK fields, taxonomy vocabularies) or deleted values (e.g. taxonomy terms, nodes referenced by CCK fields, etc).')
+      . '<br/>' . t('<b>Attenuation</b>: comments might be flagged to be frozen, i.e. individually refrain from using live render.'),
   );
   $form['inspect']['phases']['live_comparison'] = array(
     '#type' => 'checkbox',
     '#title' => t('Live comparison'),
     '#description' => t('Build diff_values from node revisions (aka import/refresh), which implies using live render.')
-      . '<br/>' . t('Note that this phase is not required for comment driven to properly work and therefore might have different bugs (i.e. out of synch).')
-      . '<br/>' . t('<b>Advantage</b>: it can perform comparisons between two arbitrary revisions of the same content type (even if they don\'t belong to the same node).')
+      . '<br/>' . t('Note that this phase is not required for comment driven to properly work and therefore might have different bugs (i.e. out of synch).'),
+    '#default_value' => $phases['live_comparison'],
+  );
+  $form['inspect']['phases']['live_comparison_pro_cons'] = $pro_cons + array(
+    '#description' => t('<b>Advantage</b>: it can perform comparisons between two arbitrary revisions of the same content type (even if they don\'t belong to the same node).')
       . '<br/>' . t('<b>Disadvantage</b>: it can NOT detect changes on properties not handled by revisions (e.g. published, promoted).')
       . '<br/>' . t('<b>Attenuation</b>: title, body, taxonomy and CCK fields do support revisions, therefore, there isn\'t much out of its scope.')
       . '<br/>' . t('<b>Disadvantage</b>: requires revisions enabled, otherwise comparing a revision to itself returns no changes.')
       . '<br/>' . t('<b>Attenuation</b>: working with revisions (driven enforced at least) is highly encouraged, since it facilitates further migration paths (even migrating to other modules, e.g. back to comment_cck).'),
-    '#default_value' => $phases['live_comparison'],
   );
   $form['inspect']['tokens'] = array(
     '#type' => 'fieldset',
     '#title' => t('Tokens'),
     '#description' => t('Tokens are only appicable for comment driven changes history (they fetch diff_values or diff_render from DB according to: per log frozen flag or per content type live render setting).'),
     '#collapsible' => TRUE,
-    '#collapsed' => ($schema != 'comment_driven'),
+    '#collapsed' => $form['inspect']['phases']['#collapsed'],
     '#tree' => TRUE,
   );
   $form['inspect']['tokens']['plain_text'] = array(
@@ -129,6 +211,11 @@ function comment_driven_inspect($form_state) {
     '#title' => t('HTML table'),
     '#default_value' => $tokens['table'],
   );
+  
+  // the menu for this form is manually provided by this module
+  // due to the specific behavior of this form
+  // therefore, lets include the driven API signature
+  $form += driven_form_signature();
   
   $form['submit'] = array(
     '#type' => 'submit',
@@ -175,61 +262,15 @@ function comment_driven_inspect($form_state) {
   // drop unselected tokens and pick up remaining keys (values are boolean)
   $tokens = array_keys(array_filter($tokens));
   
-  // include every known comment_driven_[realm] sub-module
-  // to make all supported properties available
-  // unless there is a missing dependency
-  // WARNING: might enable those driven properties which got their modules disabled
-  // without unchecking them in the content type settings,
-  // manipulating this tool requires to know such risk
-  // and the user should be responsible of re-submiting content type settings
-  // to avoid such a pitfall
-  $sub_modules[] = 'comment_driven_node';
-  if (module_exists('taxonomy')) $sub_modules[] = 'comment_driven_taxo';
-  if (module_exists('content')) $sub_modules[] = 'comment_driven_cck';
-  if (module_exists('path')) $sub_modules[] = 'comment_driven_path';
-  $fixed_module_list = module_list();
-  foreach ($sub_modules as $module) {
-    $fixed_module_list[$module] = $module;
-    // we don't mind about bootstrap phases,
-    // since these modules only expose comment_driven hooks
-    module_load_include('module', $module);
-  }
-  // make the modules' hooks available
-  // (during the rest of the request will behave as being installed)
-  module_list(TRUE, FALSE, FALSE, $fixed_module_list);
-  module_implements(NULL, FALSE, TRUE);
-
   $processed = &$form['processed']['#value'];
   if ($cids) {
     // $schema is the module name
     $module = $schema;
-    if (!comment_driven_inspect_module_installed($module)) {
+    if (!driven_inspect_module_installed($module)) {
       $processed .= '<br/>' . t('Module %module is not installed, therefore its schema is not available.', array('%module' => $module));
       return $form; // nothing else to do
     }
-    switch ($schema) {
-      case 'comment_cck':
-        $schema_map = array(
-          'table' => '{comment_cck_revisions}',
-          'cid_column' => 'cid', 
-          'old_vid_column' => 'previous_vid', 
-          'new_vid_column' => 'vid', 
-        );
-        break;
-      default: // comment_driven
-        $schema_map = array(
-          'table' => '{comment_driven_log}',
-          'cid_column' => 'cid', 
-          'old_vid_column' => 'old_vid', 
-          'new_vid_column' => 'new_vid', 
-        );
-        break;
-    }
-    $query = 'SELECT ' 
-      . $schema_map['cid_column'] . ' AS cid, ' 
-      . $schema_map['old_vid_column'] . ' AS old_vid, ' 
-      . $schema_map['new_vid_column'] . ' AS new_vid ' 
-      . ' FROM ' . $schema_map['table']
+    $query = $mapping[$schema]['query']
       . ' WHERE cid IN (' . db_placeholders($cids, 'int') . ')';
     $result = db_query($query, $cids);
     // vid pairs are empty, since we picked up cids
@@ -302,13 +343,32 @@ function comment_driven_inspect($form_state) {
             }
           }
         }
-
+        
+        $phase = 'diff_values';
+        if ($phases[$phase]) {
+          $var_export = '';
+          foreach ($log->changes as $property_id => $change) {
+            extract($change); // $label, $old, $new
+            $var_export .= $property_id . ' (-) ' . var_export($old, TRUE) . '<br/>';
+            $var_export .= $property_id . ' (+) ' . var_export($new, TRUE) . '<br/>';
+          }
+          // let tokens be near frozen/live_render for visual comparison
+          // therefore, not nested within $output[$cid]['phases']
+          $output[$cid][$phase] = array(
+            '#type' => 'fieldset',
+            '#title' => $form['inspect']['phases'][$phase]['#title'],
+            '#collapsible' => TRUE,
+            '#value' => '<code>' . $var_export . '</code>',
+            '#weight' => -10,
+          );
+        }
+        
         foreach (array('frozen', 'live_render') as $phase) {
           if (!$phases[$phase]) continue;
           
           switch ($phase) {
             case 'live_render':
-              $diff_render = comment_driven_diff_render($node_type, $log->changes);
+              $diff_render = driven_diff_render($node_type, $log->changes);
               break;
             case 'frozen':
               $diff_render = $log->diff_render;
@@ -318,7 +378,7 @@ function comment_driven_inspect($form_state) {
             '#type' => 'fieldset',
             '#title' => $form['inspect']['phases'][$phase]['#title'],
             '#collapsible' => TRUE,
-            '#value' => comment_driven_diff_summary_table($diff_render),
+            '#value' => driven_diff_summary_table($diff_render),
           );
         }
       }
@@ -339,8 +399,8 @@ function comment_driven_inspect($form_state) {
       // we waited for diff_values_refresh to perform comparison
       // to know if both vids in the pair matched the same content type
       // if so, $node_type (passed by ref) will be properly set in passing by
-      // if input was cids then we already have $node_type, but it should come back being the same     
-      $changes = comment_driven_inspect_diff_values_refresh($old_vid, $new_vid, $errors, $node_type);
+      // if input was cids then we already have $node_type, but it should come back being the same
+      $changes = driven_inspect_diff_vids($old_vid, $new_vid, $errors, $node_type);
       // FALSE means comparison couldn't be performed
       if ($changes !== FALSE) {
         // $errors might be non empty,
@@ -349,8 +409,8 @@ function comment_driven_inspect($form_state) {
           $diff_summary = t('No changes were detected.');
         }
         else {
-          $diff_render = comment_driven_diff_render($node_type, $changes);
-          $diff_summary = comment_driven_diff_summary_table($diff_render);
+          $diff_render = driven_diff_render($node_type, $changes);
+          $diff_summary = driven_diff_summary_table($diff_render);
         }
       }
       
@@ -393,7 +453,7 @@ function comment_driven_inspect($form_state) {
   return $form;
 }
 
-function comment_driven_inspect_submit($form, &$form_state) {
+function comment_driven_inspect_form_submit($form, &$form_state) {
   // we don't want to do nothing else than falling back to the same form
   // kind of self post
   $form_state['rebuild'] = TRUE;

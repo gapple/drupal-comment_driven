@@ -1,8 +1,18 @@
 ; $Id$
+
 name = Comment driven
-description = Allows comments to alter node's properties.
-core = 6.x
+description = Allows comments to alter node's properties, and displays a difference summary of the changes introduced by each comment.
+
 package = Driven
+; @d6
+core = 6.x
 
 dependencies[] = comment
+dependencies[] = driven_diff
+dependencies[] = driven_props
 
+; @d7
+files[] = comment_driven.install
+files[] = comment_driven.module
+files[] = comment_driven.alter.inc
+files[] = comment_driven.admin.inc

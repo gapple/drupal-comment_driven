@@ -5,6 +5,7 @@ Drupal.comment_driven = Drupal.comment_driven || {};
 Drupal.comment_driven.node_wrap = function() {
   // the comment_form is within id=comment_driven
   // everything else belongs to node_form
+  if ($('#comment_driven').size() == 0) return;
   
   // #weight was already provided to make
   // id=comment_driven ligther and id=driven_node_container heavier

@@ -1,9 +1,0 @@
-; $Id$
-name = Driven CCK
-description = Allows comments to alter node's CCK fields.
-core = 6.x
-package = Driven
-
-dependencies[] = comment_driven
-dependencies[] = content
-

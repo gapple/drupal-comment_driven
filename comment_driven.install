@@ -22,6 +22,7 @@ function comment_driven_uninstall() {
  * Implementation of hook_schema().
  */
 function comment_driven_schema() {
+  // @TODO: review if the frozen column is going to be provided
   $schema['comment_driven_log'] = array(
     'description' => 'Traces driven property changes.',
     'fields' => array(
@@ -80,9 +81,39 @@ function comment_driven_schema() {
 }
 
 /**
- * just a menu rebuild.
+ * checks for proper upgrade (i.e. old/new files existence, no action is taken).
  */
-function comment_driven_update_6001() {
-  menu_rebuild();
-  return array(array('success' => TRUE, 'query' => t('Menu was rebuilt to include new global settings page.')));
+function comment_driven_update_6002() {
+  $ret = array();
+  
+  $url = 'http://drupal.org/project/driven';
+  $dir = drupal_get_path('module', 'comment_driven');
+  $abort = FALSE;
+  
+  if (!module_exists('driven')) {
+    $abort = TRUE;
+    $ret[] = array('success' => FALSE, query => t('Missing new required dependency: <a href="!url">Driven API</a>. Ensure it is also enabled.', array('!url' => $url)));
+  }
+  foreach (array('node', 'taxo', 'cck', 'path') as $realm) {
+    $module = 'comment_driven_' . $realm;
+    if (is_file($dir . '/modules/' . $module . '.module')) {
+      $abort = TRUE;
+      $ret[] = array('success' => FALSE, query => t('Module %module has been moved into <a href="!url">Driven API</a>. You\'ll have to delete old modules before proceeding.', array(
+        '%module' => $module,
+        '!url' => $url,
+      )));
+    }
+  }
+  if (is_file($dir . '/comment_driven.eq.inc') || is_file($dir . '/modules/comment_driven_inspect.api.inc')) {
+    $abort = TRUE;
+    $ret[] = array('success' => FALSE, query => t('Old files has been detected. You\'ll have to delete old files and then place new ones.'));
+  }
+  
+  if ($abort) {
+    $ret['#abort'] = array('success' => FALSE, query => t('Unable to upgrade.'));
+  }
+  else {
+    $ret[] = array('success' => TRUE, query => t('Driven API detected.'));
+  }
+  return $ret;
 }

@@ -1,0 +1,14 @@
+; $Id$
+
+name = Comment driven inspect
+description = Troubleshooting tool which compares two arbitrary node revisions and displays different phases.
+
+package = Driven
+; @d6
+core = 6.x
+
+dependencies[] = driven_inspect
+
+; @d7
+files[] = comment_driven_inspect.module
+files[] = comment_driven_inspect.admin.inc

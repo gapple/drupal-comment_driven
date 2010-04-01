@@ -79,7 +79,14 @@ function comment_driven_inspect_form($form_state) {
     '#suffix' => '</ul>',
   );
   $at_least_one_property_provided = FALSE;
-  foreach (array('driven_node', 'driven_taxo', 'driven_cck', 'driven_path') as $module) {
+  $property_providers = array(
+    'driven_node', 
+    'driven_taxo', 
+    'driven_cck', 
+    'driven_path', 
+    'driven_workflow',
+  );
+  foreach ($property_providers as $module) {
     $found = module_exists($module);
     $form['prop_providers']['list'][$module] = array(
       '#type' => 'markup',
@@ -349,8 +356,9 @@ function comment_driven_inspect_form($form_state) {
           $var_export = '';
           foreach ($log->changes as $property_id => $change) {
             extract($change); // $label, $old, $new
-            $var_export .= $property_id . ' (-) ' . var_export($old, TRUE) . '<br/>';
-            $var_export .= $property_id . ' (+) ' . var_export($new, TRUE) . '<br/>';
+            // using check_plain to make HTML visible
+            $var_export .= $property_id . ' (-) ' . check_plain(var_export($old, TRUE)) . '<br/>';
+            $var_export .= $property_id . ' (+) ' . check_plain(var_export($new, TRUE)) . '<br/>';
           }
           // let tokens be near frozen/live_render for visual comparison
           // therefore, not nested within $output[$cid]['phases']

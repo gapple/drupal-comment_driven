@@ -430,8 +430,8 @@ function comment_driven_driven_props_type_settings() {
     'menu_title' => 'Comment driven',
     'description_tail' => t('driven through comments'),
     'behaviors' => array(
-      'driven_cck_producer_consumer',
       'driven_acp',
+      'driven_cck_producer_consumer',
     ),
   );
   return $type_settings;

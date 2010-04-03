@@ -326,6 +326,20 @@ function _comment_driven_validate($form, &$form_state) {
   $orig_form = isset($form['#comment_driven:orig_form'])
     ? $form['#comment_driven:orig_form'] // the previously saved
     : $form; // copied
+  // following the approach of content_add_more_js
+  // let other modules the oportunity to tweak the original form
+  // to add elements with empty values
+  // for those created with AHAH while being on preview
+  // (e.g. driven_cck_comment_driven_orig_form_alter)
+  // note that before the first validation attempt the orig_form hasn't been copied
+  // therefore, some AHAH elements might get in
+  // without causing any problem, since preview hasn't been performed yet
+  // and the form should still reflect the state of the saved node
+  // therefore, to test this, re-previewing would be the addressed use case
+  // also note that if this is the first time, altering the orig_form
+  // shouldn't be needed, but not knowing what 3rd party modules might come up with
+  // lets give them the chance anyway
+  drupal_alter('comment_driven_orig_form', $orig_form, $form);
   $form_state['#comment_driven:orig_form'] = $orig_form;
   
   // if we are comming from a preview the $form is refleting the previewed node

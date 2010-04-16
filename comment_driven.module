@@ -24,7 +24,7 @@ function comment_driven_enable() {
 }
 
 /**
- * Implementats hook_init().
+ * Implements hook_init().
  */
 function comment_driven_init() {
   // can't rely on form_alter to include JavaScript
@@ -45,7 +45,7 @@ function comment_driven_init() {
 }
 
 /**
- * Implementation of hook_perm().
+ * Implements hook_perm().
  */
 function comment_driven_perm() {
   //$perms[] = COMMENT_DRIVEN_IMPORT__PERM;
@@ -81,6 +81,17 @@ function comment_driven_node_type($op, $info) {
       driven_props_delete_settings($driver_mod, $node_type);
       break;
   }
+}
+
+/**
+ * Implements hook_theme().
+ */
+function comment_driven_theme() {
+  return array(
+    'comment_driven_proxy' => array(
+      'arguments' => array('element' => NULL),
+    ),
+  );
 }
 
 ///\\\///\\\///\\\///\\\///
@@ -191,7 +202,10 @@ function comment_driven_is_live_render($node_type) {
 
 function _comment_driven_disguise_children($element) {
   // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
-  if (!is_array($element)) comment_driven_assertion_failed('something nasty is happening somewhere: !is_array($element)');
+  if (!is_array($element)) {
+    comment_driven_assertion_failed('something nasty is happening somewhere: !is_array($element)');
+    return;
+  }
   
   // adjust #parents to match the disguised elements of comment_form
   // note that no parent would point to a level above the comment_form
@@ -208,6 +222,7 @@ function _comment_driven_disguise_children($element) {
     // protect ourself against 3rd parties creating NULL children (e.g. [#736968], [#737044])
     // lets babysit NULL children, but it has to be an array otherwise
     if (!is_null($element[$key])) {
+      _comment_driven_setup_proxy_render($element[$key]);
       $element[COMMENT_DRIVEN__DISGUISE_PREFIX . $key] = _comment_driven_disguise_children($element[$key]);
     }
     // if it was NULL (above babysitting) won't hurt clearing it
@@ -224,6 +239,58 @@ function _comment_driven_disguise_adjust_parents(&$element) {
       $element['#parents'][$index] = COMMENT_DRIVEN__DISGUISE_PREFIX . $parent;
     }
   }
+}
+
+function _comment_driven_setup_proxy_render(&$element) {
+  $proxy_render = array(
+    '#pre_render' => '_comment_driven_pre_render_proxy', 
+    '#theme' => 'comment_driven_proxy', // points to theme_comment_driven_proxy
+    '#post_render' => '_comment_driven_post_render_proxy',
+  );
+  foreach ($proxy_render as $key => $proxy) {
+    if (isset($element[$key])) {
+      // disguise_children supports only element_children
+      // (disguise_form_values doesn't address non-children either) 
+      // undisguise does support non-children as well
+      // manually disguise non-children
+      // @TODO: maybe it is time to have non-children support into disguise_children (?)
+      $element['#' . COMMENT_DRIVEN__DISGUISE_PREFIX . $key] = $element[$key];
+      $element[$key] = $proxy;
+    }
+  }
+}
+
+// $args not used when $key is '#theme'
+function _comment_driven_proxy_render($element, $key, $args) {
+  // $key is expected to be overriden by its disguised version
+  // but, just in case, lets ensure we won't fall back here (unintended recursion) 
+  unset($element[$key]);
+  $element = _comment_driven_undisguise($element);
+  if ($key === '#theme') {
+    // if we got here, then #theme function/template is expected to exists
+    return theme($element['#theme'], $element);
+  }
+  $function = $element[$key];
+  // if we got here, then target function is expected to exists
+  return call_user_func_array($function, $args);
+}
+
+// proxy_render
+function theme_comment_driven_proxy($element) {
+  $args = func_get_args(); // pass through the same arguments we got
+  return _comment_driven_proxy_render($element, '#theme', $args);
+}
+
+// proxy_render
+function _comment_driven_pre_render_proxy($element) {
+  $args = func_get_args(); // pass through the same arguments we got
+  _comment_driven_proxy_render($element, '#pre_render', $args);
+}
+
+// proxy_render
+function _comment_driven_post_render_proxy($content, $element) {
+  $args = func_get_args(); // pass through the same arguments we got
+  _comment_driven_proxy_render($element, '#post_render', $args);
 }
 
 // helper function to drive properties programmatically [#741274] 

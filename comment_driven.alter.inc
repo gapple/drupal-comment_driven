@@ -186,6 +186,13 @@ function _comment_driven_proceed_comment_form_alter(&$form, &$form_state) {
     '#attributes' => array('id' => 'driven_node_container',  'style' => 'display:none'),
     '#weight' => 1000, // sink it (don't bother browsers without CSS support)
   );
+  // this could be set regarless vertical_tabs being enabled or not
+  // but I would prefer to avoid another 3rd party module
+  // interpreting the #group key as something else
+  if (module_exists('vertical_tabs')) {
+    // support vertical_tabs [#765972]
+    $form['driven_node']['#group'] = FALSE;
+  }
 }
 
 function _comment_driven_restore_from_preview(&$form, &$form_state, &$ned_form_state) {

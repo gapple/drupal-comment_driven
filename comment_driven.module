@@ -416,7 +416,7 @@ function comment_driven_preprocess_comment(&$vars) {
       . '; method: ' . ($log->frozen ? t('Frozen by flag') : ($live_render ? t('Live render per type') : t('Frozen per type')))
       . '}'
       // despite the CSS height, I also like to contraint it by HTML to avoid bizarre effects until CSS are loaded
-      . '<img class="comment_driven_inspect-icon" height="20" src="' . drupal_get_path('module', 'driven') . '/driven-logo.jpg" />'
+      . '<img class="comment_driven_inspect-icon" height="20" src="' . base_path() . drupal_get_path('module', 'driven') . '/driven-logo.jpg" />'
       . '</div>';
       
     $diff_prefix = '<div class="comment_driven_inspect">' . $diff_inspect . $diff_summary_table . '</div>';

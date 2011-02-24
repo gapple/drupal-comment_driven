@@ -540,3 +540,11 @@ function comment_driven_driven_global_settings_form() {
   module_load_include('inc', 'comment_driven', 'comment_driven.admin');
   return _comment_driven_driven_global_settings_form();
 }
+
+/**
+ * Helper function to insert a comment driven log message
+ */
+function comment_driven_insert_log($cid, $old_vid, $new_vid, $changes, $diff_render) {
+  $query = "INSERT INTO {comment_driven_log}(cid, old_vid, new_vid, changes, diff_render, timestamp) VALUES(%d, %d, %d, '%s', '%s', %d)";
+  db_query($query, $cid, $old_vid, $new_vid, serialize($changes), serialize($diff_render), time());
+}

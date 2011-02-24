@@ -1,0 +1,11 @@
+; $Id$
+
+name = Comment driven NodeAPI
+description = Adds support for comments not inserted via FAPI
+
+package = Driven
+; @d6
+core = 6.x
+
+dependencies[] = comment_driven
+dependencies[] = driven_inspect

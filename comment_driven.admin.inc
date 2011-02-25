@@ -1,5 +1,4 @@
 <?php
-// $Id$
 
 /**
  * Deferred function comment_driven_driven_props_type_settings_form(). 

@@ -1,5 +1,4 @@
 <?php
-// $Id$
 
 define('COMMENT_DRIVEN__DISGUISE_PREFIX', 'cdriven-');
 // these permission names should exists all the time

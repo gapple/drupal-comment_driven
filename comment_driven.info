@@ -1,4 +1,3 @@
-; $Id$
 
 name = Comment driven
 description = Allows comments to alter node's properties, and displays a difference summary of the changes introduced by each comment.

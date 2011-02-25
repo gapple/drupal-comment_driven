@@ -1,5 +1,4 @@
 <?php
-// $Id$
 
 // this constant will be available only if the module is enabled
 // therefore, to test for it an approach might be

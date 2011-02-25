@@ -1,4 +1,3 @@
-// $Id$
 
 Drupal.comment_driven = Drupal.comment_driven || {};
 

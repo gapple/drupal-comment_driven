@@ -1,5 +1,4 @@
 <?php
-// $Id$
 
 /**
  * Deferred heavier fragment of comment_driven_form_alter().

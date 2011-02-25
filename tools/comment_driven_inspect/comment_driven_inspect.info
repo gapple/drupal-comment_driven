@@ -1,4 +1,3 @@
-; $Id$
 
 name = Comment driven inspect
 description = Troubleshooting tool which compares two arbitrary node revisions and displays different phases.

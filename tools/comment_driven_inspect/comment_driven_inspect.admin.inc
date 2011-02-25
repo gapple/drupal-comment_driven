@@ -1,5 +1,4 @@
 <?php
-// $Id$
 
 function comment_driven_inspect_form($form_state) {
   $form_values = $form_state['values'];

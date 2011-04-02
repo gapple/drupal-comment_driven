@@ -150,6 +150,20 @@ function comment_driven_submit($form, &$form_state) {
   _comment_driven_submit($form, $form_state);
 }
 
+/**
+ * Implements hook_nodeapi()
+ */
+function comment_driven_nodeapi($node, $op) {
+  // Organic groups array is not loaded properly;
+  // make sure to correct values before saved.
+  // http://drupal.org/node/1030506
+  if ($op === 'presave' && !empty($node->og_groups)) {
+    foreach($node->og_groups as $gid => $v) {
+      $node->og_groups[$gid] = empty($v) ? 0 : $gid;
+    }
+  }
+}
+
 // drive properties programmatically [#741274]
 // $node and $comment are faked,
 // just arrays/objects following the format of $form_state['values']

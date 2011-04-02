@@ -27,7 +27,7 @@ function comment_driven_enable() {
  */
 function comment_driven_init() {
   // can't rely on form_alter to include JavaScript
-  // since the form might get cached and pass directly to validation 
+  // since the form might get cached and pass directly to validation
   // might check whether we are in a comment path to avoid include in it
   // but what if the form is used by another module under a different path
   $module_path = drupal_get_path('module', 'comment_driven');
@@ -48,8 +48,8 @@ function comment_driven_init() {
  */
 function comment_driven_perm() {
   //$perms[] = COMMENT_DRIVEN_IMPORT__PERM;
-  $perms[] = comment_driven_get_perm_name('drive', 'ALL');  
-  
+  $perms[] = comment_driven_get_perm_name('drive', 'ALL');
+
   foreach (node_get_types() as $type) {
     if ($type->module == 'node') {
       $node_type = $type->type;
@@ -107,7 +107,7 @@ function comment_driven_form_alter(&$form, &$form_state, $form_id) {
     // driven properties are not editable, just available on comment creation
     return; // step out of the way
   }
-  
+
   $nid = $form['nid']['#value'];
   $node = node_load($nid);
   $node_type = $node->type;
@@ -129,7 +129,7 @@ function comment_driven_form_alter(&$form, &$form_state, $form_id) {
     // @per-module-discrimination: incompatible with comment_upload [#741544-8]
     return; // step out of the way
   }
-  
+
   // lazy load the heavier fragment of this function
   module_load_include('inc', 'comment_driven', 'comment_driven.alter');
   _comment_driven_proceed_comment_form_alter($form, $form_state);
@@ -168,15 +168,15 @@ function comment_driven_save($node, $comment, &$errors = NULL) {
   $comment = (array)$comment;
   $node = (array)$node;
   $op = array('op' => t('Save'));
-  
+
   $comment_driven = comment_driven_disguise_form_values($comment);
   $form_state['values'] = $comment_driven + $node + $op;
 
   // simply delegate to core
   drupal_execute('comment_form', $form_state, $comment);
-  
+
   $errors = form_get_errors();
-  // the operation succeeded if there were no errors 
+  // the operation succeeded if there were no errors
   return empty($errors);
 }
 
@@ -200,16 +200,16 @@ function comment_driven_is_live_render($node_type) {
 }
 
 function _comment_driven_disguise_children($element) {
-  // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
+  // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage
   if (!is_array($element)) {
     comment_driven_assertion_failed('something nasty is happening somewhere: !is_array($element)');
     return;
   }
-  
+
   // adjust #parents to match the disguised elements of comment_form
   // note that no parent would point to a level above the comment_form
   _comment_driven_disguise_adjust_parents($element);
-  
+
   foreach (element_children($element) as $key) {
     // avoid disguising non-conflictive sub-elements
     // since we know they parent was already disguised
@@ -242,14 +242,14 @@ function _comment_driven_disguise_adjust_parents(&$element) {
 
 function _comment_driven_setup_proxy_render(&$element) {
   $proxy_render = array(
-    '#pre_render' => '_comment_driven_pre_render_proxy', 
+    '#pre_render' => '_comment_driven_pre_render_proxy',
     '#theme' => 'comment_driven_proxy', // points to theme_comment_driven_proxy
     '#post_render' => '_comment_driven_post_render_proxy',
   );
   foreach ($proxy_render as $key => $proxy) {
     if (isset($element[$key])) {
       // disguise_children supports only element_children
-      // (disguise_form_values doesn't address non-children either) 
+      // (disguise_form_values doesn't address non-children either)
       // undisguise does support non-children as well
       // manually disguise non-children
       // @TODO: maybe it is time to have non-children support into disguise_children (?)
@@ -262,7 +262,7 @@ function _comment_driven_setup_proxy_render(&$element) {
 // $args not used when $key is '#theme'
 function _comment_driven_proxy_render($element, $key, $args) {
   // $key is expected to be overriden by its disguised version
-  // but, just in case, lets ensure we won't fall back here (unintended recursion) 
+  // but, just in case, lets ensure we won't fall back here (unintended recursion)
   unset($element[$key]);
   $element = _comment_driven_undisguise($element);
   if ($key === '#theme') {
@@ -292,11 +292,11 @@ function _comment_driven_post_render_proxy($content, $element) {
   _comment_driven_proxy_render($element, '#post_render', $args);
 }
 
-// helper function to drive properties programmatically [#741274] 
+// helper function to drive properties programmatically [#741274]
 function comment_driven_disguise_form_values($arr) {
-  // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
+  // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage
   if (!is_array($arr)) comment_driven_assertion_failed('misusage of comment_driven_disguise_non_children: !is_array($arr)');
-  
+
   $disguised = array();
   foreach ($arr as $key => $value) {
     $disguised[COMMENT_DRIVEN__DISGUISE_PREFIX . $key] = $arr[$key];
@@ -314,7 +314,7 @@ function _comment_driven_undisguise($element) {
       }
     }
   }
-  
+
   foreach ($element as $key => $value) {
     if (is_array($element[$key])) {
       $element[$key] = _comment_driven_undisguise($element[$key]);
@@ -333,7 +333,7 @@ function comment_driven_after_build($element, &$form_state) {
   // restore original comment_form ids
   // (which is only relevant from a theme support standpoint)
   _comment_driven_restore_ids($element);
-  
+
   return $element;
 }
 
@@ -350,7 +350,7 @@ function _comment_driven_restore_ids(&$element) {
 function _comment_driven_extract_state_values($state_values) {
   $values = array();
   foreach (array_keys($state_values) as $key) {
-    if (strpos($key, COMMENT_DRIVEN__DISGUISE_PREFIX) === 0) { 
+    if (strpos($key, COMMENT_DRIVEN__DISGUISE_PREFIX) === 0) {
       $values[$key] = $state_values[$key];
     }
   }
@@ -380,7 +380,7 @@ function comment_driven_load_log($cid) {
     $log->diff_render = unserialize($log->diff_render);
   }
 
-  // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage 
+  // @TODO: every call to comment_driven_assertion_failed will be removed after alpha/beta stage
   if (db_fetch_object($result) !== FALSE) comment_driven_assertion_failed('non-unique {comment_driven_log}.cid: ' . $cid);
 
   return $log; // FALSE if not found
@@ -388,7 +388,7 @@ function comment_driven_load_log($cid) {
 
 function comment_driven_preprocess_comment(&$vars) {
   $comment = $vars['comment'];
-  
+
   $node_type = node_get_types('type', node_load($comment->nid))->type;
   $log = comment_driven_load_log($comment->cid);
   if (!$log) return;
@@ -396,7 +396,7 @@ function comment_driven_preprocess_comment(&$vars) {
   $live_render = (!$log->frozen && comment_driven_is_live_render($node_type));
   $diff_render = $live_render ? driven_diff_render($node_type, $log->changes) : $log->diff_render;
   $diff_summary_table = driven_diff_summary_table($diff_render);
-  
+
   // IMPORTANT: first check that the module exists before attempting its constant COMMENT_DRIVEN_INSPECT__PERM
   if (variable_get('comment_driven:inspect_links', 1) && module_exists('comment_driven_inspect') && user_access(COMMENT_DRIVEN_INSPECT__PERM)) {
     if (empty($diff_render)) {
@@ -417,19 +417,19 @@ function comment_driven_preprocess_comment(&$vars) {
       // despite the CSS height, I also like to contraint it by HTML to avoid bizarre effects until CSS are loaded
       . '<img class="comment_driven_inspect-icon" height="20" src="' . base_path() . drupal_get_path('module', 'driven') . '/driven-logo.jpg" />'
       . '</div>';
-      
+
     $diff_prefix = '<div class="comment_driven_inspect">' . $diff_inspect . $diff_summary_table . '</div>';
   }
   else {
     $diff_prefix = $diff_summary_table;
   }
-  
+
   //$vars['comment_body'] = $vars['content']; // $vars['comment']->comment
   $vars['content'] = $diff_prefix . $vars['content'];
 
   if ($log->old_vid != $log->new_vid) {
     // to be used like: print l(t('view revision before changes'), $driven_revision_before . '/view')
-    $vars['driven_revision_before'] = "node/$comment->nid/revisions/$log->old_vid"; 
+    $vars['driven_revision_before'] = "node/$comment->nid/revisions/$log->old_vid";
     $vars['driven_revision_after'] = "node/$comment->nid/revisions/$log->new_vid";
   }
 }
@@ -449,15 +449,15 @@ function comment_driven_unsupported_driven_props($driven_props) {
 function comment_driven_form_driven_props_overview_form_alter(&$form, &$form_state) {
   $node_type = $form['#node_type'];
   $driver_mod = $form['#driver_mod'];
-  
+
   if ($driver_mod != 'comment_driven') {
     return; // step out
   }
-  
+
   // @per-module-discrimination: incompatible with comment_upload [#741544-8]
   if (comment_driven_is_attachments_on_comments($node_type)) {
     $form['driven_props']['comment_upload'] = array(
-      '#type' => 'item', 
+      '#type' => 'item',
       '#value' => t('Regretfully comment driven properties are <a href="!url">incompatible with comment_upload</a>.', array('!url' => 'http://drupal.org/node/741544#comment-2715990'))
         . '<br/>' . t('You can disable "attachments on comments" to enable comment driven properties for this content type.')
         . '<br/>' . t('Otherwise you can try <a href="!url">an alternative approach</a> to achieve attachments on comments.', array('!url' => 'http://drupal.org/node/739690#comment-2727854')),
@@ -470,7 +470,7 @@ function comment_driven_form_driven_props_overview_form_alter(&$form, &$form_sta
     //$form['driven_props']['enabled']['#default_value'] = 0;
     //$form['driven_props']['enabled']['#disabled'] = TRUE;
   }
-  
+
   if (module_exists('driven_acp')) {
     $form['driven_props']['acp_note'] = array(
       '#type' => 'fieldset',
@@ -511,13 +511,13 @@ function comment_driven_prop_behavior_alter(&$form, $node_type, $prop, $behavior
     // make clear what would be the default setting
     $form['acp']['#default_value'] = 'grant_all_roles';
     unset($form['acp']['#options']['none']);
-    
+
     $perm = comment_driven_get_perm_name('drive', 'ALL');
     $roles = user_roles(FALSE, $perm);
     $perm = comment_driven_get_perm_name('drive', $node_type);
     $roles += user_roles(FALSE, $perm);
     $form['roles']['#options'] = $roles;
-    
+
     // highlight the content type name
     $perm = comment_driven_get_perm_name('drive', '<b>' . $node_type . '</b>');
     $form['roles']['#description'] = t('Listed roles are limited to those having permission:') . ' ' . $perm;
@@ -525,7 +525,7 @@ function comment_driven_prop_behavior_alter(&$form, $node_type, $prop, $behavior
 }
 
 /**
- * Implements hook_driven_props_type_settins_form(). 
+ * Implements hook_driven_props_type_settins_form().
  */
 function comment_driven_driven_props_type_settings_form($node_type) {
   module_load_include('inc', 'comment_driven', 'comment_driven.admin');
